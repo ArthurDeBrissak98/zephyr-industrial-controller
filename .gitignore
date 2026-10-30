@@ -1,0 +1,13 @@
+# Zephyr build directories
+build/
+zephyr/
+*.d
+
+# Python virtual environment
+.venv/
+__pycache__/
+
+# IDE files
+.vscode/
+*.swp
+*.swo
