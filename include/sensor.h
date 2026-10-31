@@ -51,6 +51,12 @@ extern struct k_msgq sensor_msgq;
 extern struct k_msgq monitor_msgq;
 extern struct k_msgq modbus_tx_msgq;
 
+struct pid_state {
+    int integral;
+    int prev_error;
+    int current_freq;
+};
+
 void alert_isr(const void *arg);
 
 #endif

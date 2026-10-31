@@ -1,0 +1,4 @@
+tests:
+  apps.system_monitor.test_pid:
+    platform_allow: native_sim
+    tags: pid

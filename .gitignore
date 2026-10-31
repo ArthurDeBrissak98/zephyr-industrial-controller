@@ -11,3 +11,12 @@ __pycache__/
 .vscode/
 *.swp
 *.swo
+
+# Утилита для настройки сети (не наш код)
+net-tools/
+
+# SDK Zephyr (на всякий случай)
+zephyr-sdk-*/
+zephyr-sdk-*.tar.gz
+zephyr-sdk-*.zip
+zephyr-sdk-*.xz

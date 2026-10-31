@@ -146,6 +146,13 @@ static void sensor_thread(void)
             LOG_WRN("Демо: Авария сброшена");
         }
 
+        // SCADA будет читать эти значения по Function Code 03
+        holding_regs[0] = (uint16_t)data.level_percent_x10;
+        holding_regs[1] = (uint16_t)data.temp_supply_x10;
+        holding_regs[2] = (uint16_t)data.temp_outdoor_x10;
+        holding_regs[3] = (uint16_t)data.freq_hz_x100;
+        holding_regs[4] = (uint16_t)(data.faults & 0xFFFF);
+
         k_msgq_put(&sensor_msgq, &data, K_FOREVER);
         k_sleep(K_MSEC(100)); 
     }
