@@ -9,4 +9,6 @@ target_sources(app PRIVATE
     src/sensor.c
     src/control.c
     src/monitor.c
+    src/modbus_client.c
+    src/cli.c
 )

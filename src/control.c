@@ -4,13 +4,11 @@
 
 LOG_MODULE_REGISTER(control, LOG_LEVEL_INF);
 
-extern void update_pump_frequency(int freq);
-
 static void control_thread(void)
 {
     struct sensor_data data;
     // Коэффы подобраны "на глаз" для симулятора. 
-    // В реале надо считать по Зиглеру-Николсу под конкретный привод.
+    // TODO: потом надо будет нормально посчитать, а не просто тыкать пальцем в небо
     const int Kp = 50; 
     const int Ki = 5;  
     int integral = 0;
@@ -18,10 +16,25 @@ static void control_thread(void)
 
     while (1) {
         if (k_msgq_get(&sensor_msgq, &data, K_FOREVER) == 0) {
+
+            static int dbg_count = 0;
+        if (++dbg_count % 50 == 0) {
+            LOG_INF("[control] got data, setpoint=%d, faults=%d", 
+                    data.setpoint_x10, data.faults);
+        }
             
+            // Если профиль сменили через терминал, ПИД надо сбросывать
+            // и насос (или приточка) тупят при переключении.
+            if (data.profile_changed) {
+                integral = 0;
+                prev_error = 0;
+            }
+
             // Если сработала любая защита - рубим частоту в ноль
             if (data.faults != FAULT_NONE) {
-                update_pump_frequency(0); 
+                int stop_freq = 0;
+                k_msgq_put(&modbus_tx_msgq, &stop_freq, K_NO_WAIT); // Отправляем 0 Гц в Modbus-поток
+                
                 integral = 0; // Anti-windup: сбрасываем интеграл, чтобы не было выброса при восстановлении
                 prev_error = 0;
                 data.freq_hz_x100 = 0;
@@ -30,9 +43,10 @@ static void control_thread(void)
             }
 
             int measured_value = 0;
-            if (ACTIVE_PROFILE == PROFILE_PUMP) {
+            // Проверяем активный профиль
+            if (current_profile == PROFILE_PUMP) {
                 measured_value = data.level_percent_x10;
-            } else if (ACTIVE_PROFILE == PROFILE_AHU) {
+            } else if (current_profile == PROFILE_AHU) {
                 measured_value = data.temp_supply_x10;
             }
 
@@ -49,7 +63,10 @@ static void control_thread(void)
             if (target_freq > 5000) target_freq = 5000;
             if (target_freq < 0) target_freq = 0;
 
-            update_pump_frequency(target_freq);
+            // Отправляем результат в отдельный поток Modbus
+            // K_NO_WAIT, чтобы ПИД не залипал, если очередь вдруг полная
+            k_msgq_put(&modbus_tx_msgq, &target_freq, K_NO_WAIT);
+            
             data.freq_hz_x100 = target_freq;
             k_msgq_put(&monitor_msgq, &data, K_NO_WAIT);
         }

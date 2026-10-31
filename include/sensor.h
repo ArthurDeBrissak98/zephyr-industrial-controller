@@ -6,8 +6,9 @@
 #define PROFILE_PUMP 0
 #define PROFILE_AHU  1
 
-// ВЫБЕРИТЕ АКТИВНЫЙ ПРОФИЛЬ:
-#define ACTIVE_PROFILE PROFILE_PUMP 
+// Убрал жесткий дефайн, теперь профиль можно менять сразу в терминале
+// Если надо дефолтный другой - меняем тут.
+extern volatile int current_profile;
 
 #define FAULT_NONE            0
 #define FAULT_WIRE_BREAK      (1 << 0) 
@@ -33,10 +34,14 @@ struct sensor_data {
     int temp_outdoor_x10;    
     int temp_return_water_x10; 
     int filter_dp_pa;        
+
+    // Флажок при переключении профиля
+    bool profile_changed; 
 };
 
 extern struct k_msgq sensor_msgq;
 extern struct k_msgq monitor_msgq;
+extern struct k_msgq modbus_tx_msgq;
 
 void alert_isr(const void *arg);
 
