@@ -22,15 +22,19 @@ jobs:
           pip3 install --user -U west
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: Init West workspace
+      - name: Init Zephyr workspace (in separate folder)
         run: |
-          west init -l .
+          cd ${{ github.workspace }}/..
+          west init -m https://github.com/zephyrproject-rtos/zephyr --mr main zephyr-workspace
+          cd zephyr-workspace
           west update
+          west zephyr-export
 
       - name: Install Zephyr SDK
-        run: |
-          west sdk install --toolchains x86_64-zephyr-elf
+        working-directory: ${{ github.workspace }}/../zephyr-workspace
+        run: west sdk install --toolchains x86_64-zephyr-elf
 
       - name: Run Ztest via Twister
+        working-directory: ${{ github.workspace }}/../zephyr-workspace
         run: |
-          ./zephyr/scripts/twister -T tests -p native_sim
+          ./zephyr/scripts/twister -T ${{ github.workspace }}/tests -p native_sim
