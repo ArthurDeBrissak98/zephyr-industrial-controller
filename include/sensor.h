@@ -6,9 +6,14 @@
 #define PROFILE_PUMP 0
 #define PROFILE_AHU  1
 
-// Убрал жесткий дефайн, теперь профиль можно менять сразу в терминале
-// Если надо дефолтный другой - меняем тут.
-extern volatile int current_profile;
+// НОВОЕ: Режимы аналогового входа
+#define INPUT_4_20MA 0
+#define INPUT_0_10V  1
+
+// Убрал дефайн, теперь профиль можно менять прям в терминале
+extern volatile int current_profile; 
+// Добавил режим входа, чтобы переключать ток/напряжение
+extern volatile int input_mode; 
 
 #define FAULT_NONE            0
 #define FAULT_WIRE_BREAK      (1 << 0) 
@@ -26,7 +31,7 @@ struct sensor_data {
     uint32_t faults;         
 
     // Насос
-    int current_ua;          
+    int current_ua;          // Ток в мкА (если 4-20мА)
     int level_percent_x10;   
 
     // Приточка (AHU)
@@ -35,7 +40,10 @@ struct sensor_data {
     int temp_return_water_x10; 
     int filter_dp_pa;        
 
-    // Флажок при переключении профиля
+    // НОВОЕ: Напряжение в мВ (если 0-10В)
+    int voltage_mv;          
+
+    // Флаг, чтобы ПИД сбрасывался при смене профиля/режима
     bool profile_changed; 
 };
 

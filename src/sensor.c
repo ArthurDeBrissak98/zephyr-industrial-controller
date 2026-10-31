@@ -5,8 +5,9 @@
 
 LOG_MODULE_REGISTER(sensor, LOG_LEVEL_INF);
 
-// Дефолтный профиль. Его меняет cli.c, когда мы нажимаем 1 или 2.
+// Дефолтный профиль и режим. Их меняет cli.c
 volatile int current_profile = PROFILE_PUMP;
+volatile int input_mode = INPUT_4_20MA; 
 
 K_MSGQ_DEFINE(sensor_msgq, sizeof(struct sensor_data), 10, 4);
 K_MSGQ_DEFINE(monitor_msgq, sizeof(struct sensor_data), 10, 4);
@@ -18,59 +19,63 @@ static void sensor_thread(void)
 {
     struct sensor_data data = {0};
     int cycle_count = 0;
-    int last_profile = -1; // Чтобы отследить, когда именно нажали кнопку переключения
+    int last_profile = -1; 
+    int last_input_mode = -1;
     atomic_set(&current_freq_hz_x100, 2500);
 
     int level = 500;       
-    int temp_sup = 150;    
+    int temp_sup = 200;    // Фикс: поставил 200, чтобы приточка не глючила
     int filter_dp = 50;    
 
-    // Убрал дефайн, теперь стартуем с того, что в current_profile
-    LOG_INF("Старт профиля: %s", (current_profile == PROFILE_PUMP) ? "PUMP" : "AHU");
+    LOG_INF("Старт профиля: %s, режим входа: %s", 
+            (current_profile == PROFILE_PUMP) ? "PUMP" : "AHU",
+            (input_mode == INPUT_4_20MA) ? "4-20mA" : "0-10V");
 
     while (1) {
-    cycle_count++;
-    int freq = atomic_get(&current_freq_hz_x100);
-
-    if (cycle_count % 50 == 0) {
-        LOG_INF("[sensor] iter=%d, profile=%d, freq=%d", 
-                cycle_count, current_profile, freq);
-    }
-    
-    data.faults = FAULT_NONE;
+        cycle_count++;
+        int freq = atomic_get(&current_freq_hz_x100);
+        
+        // ОБЯЗАТЕЛЬНО сбрасываем флаги
+        data.faults = FAULT_NONE;
+        data.profile_changed = false;
 
         // --- ОБРАБОТКА ПЕРЕКЛЮЧЕНИЯ ПРОФИЛЯ ---
         if (current_profile != last_profile) {
             LOG_WRN(">>> ПРОФИЛЬ СМЕНИЛСЯ НА: %s <<<", 
                     (current_profile == PROFILE_PUMP) ? "PUMP" : "AHU");
             last_profile = current_profile;
-            
-            // Говорим ПИДу, что надо сбросить интеграл
             data.profile_changed = true;
-            
-            // Сбрасываем физику, а то бак с водой вдруг стал приточной установкой
             level = 500; 
             filter_dp = 50;
-            
-            // ХЗ зачем, но без очистки очередей ПИД хватал старые данные 
-            // и дико глючил. Сеньор сказал "очищай", я очистил. 
             k_msgq_purge(&sensor_msgq);
             k_msgq_purge(&monitor_msgq);
-        } else {
-            // Если не переключались, то флаг ставим в false, чтобы ПИД не сбрасывался каждый цикл
-            data.profile_changed = false;
+            k_msgq_put(&monitor_msgq, &data, K_NO_WAIT); // Будим монитор
+        }
+
+        // --- ОБРАБОТКА ПЕРЕКЛЮЧЕНИЯ РЕЖИМА ВХОДА ---
+        if (input_mode != last_input_mode) {
+            LOG_WRN(">>> РЕЖИМ ВХОДА СМЕНИЛСЯ НА: %s <<<", 
+                    (input_mode == INPUT_4_20MA) ? "4-20mA" : "0-10V");
+            last_input_mode = input_mode;
+            data.profile_changed = true; // Используем тот же флаг для сброса ПИДа
+            level = 500;
+            filter_dp = 50;
+            k_msgq_purge(&sensor_msgq);
+            k_msgq_purge(&monitor_msgq);
+            k_msgq_put(&monitor_msgq, &data, K_NO_WAIT);
         }
 
         data.freq_hz_x100 = freq;
-        data.motor_current_ma = (freq * freq) / 7000;  
         
-        // Если частота слишком высокая - эмулируем клин и аварию
+        // Фикс тока: квадратичная зависимость, а не 5А всегда
+        data.motor_current_ma = (freq * freq) / 7000; 
+        
         if (freq > 4500) {
-            data.motor_current_ma = 15000; // Эмуляция клина
+            data.motor_current_ma = 8000; // Эмуляция клина
             data.faults |= FAULT_OVERLOAD;
         }
 
-        // Раз в 10 сек роняем связь на 2 сек (для проверки защиты)
+        // Раз в 10 сек роняем связь на 2 сек
         if ((cycle_count % 100) >= 80) {
             data.faults |= FAULT_WIRE_BREAK;
             data.current_ua = 2000;
@@ -78,13 +83,12 @@ static void sensor_thread(void)
         }
 
         if (current_profile == PROFILE_PUMP) {
-            data.setpoint_x10 = 500; // Уставка 50.0%
+            data.setpoint_x10 = 500; 
             
             if (freq > 0 && !(data.faults & FAULT_WIRE_BREAK)) {
-                // Уровень растет/падает + немного шума
                 level += ((freq - 2500) / 100) + ((sys_rand32_get() % 20) - 10);
             } else if (freq == 0) {
-                level -= 5; // Если насос стоит - вода убывает
+                level -= 5; 
             }
             
             if (level > 1000) level = 1000;
@@ -92,15 +96,21 @@ static void sensor_thread(void)
             
             if (!(data.faults & FAULT_WIRE_BREAK)) {
                 data.level_percent_x10 = level;
-                data.current_ua = 4000 + (level * 16); 
+                // Выбираем, что выдавать: ток или напряжение
+                if (input_mode == INPUT_4_20MA) {
+                    data.current_ua = 4000 + (level * 16);
+                    data.voltage_mv = -1; 
+                } else {
+                    data.voltage_mv = level * 10; 
+                    data.current_ua = -1;
+                }
             }
             
             if (level < 100) data.faults |= FAULT_DRY_RUN; 
         }
 
         if (current_profile == PROFILE_AHU) {
-            data.setpoint_x10 = 200; // Уставка 20.0 C
-            
+            data.setpoint_x10 = 200; 
             data.temp_outdoor_x10 = -150 + (sys_rand32_get() % 100);
             
             if (cycle_count % 500 == 0) filter_dp += 10;
@@ -110,18 +120,26 @@ static void sensor_thread(void)
             data.temp_return_water_x10 = 500 + (freq / 10); 
             if (data.temp_return_water_x10 < 30) data.faults |= FAULT_FREEZE_WATER;
 
-            // ФИКС: Поменял формулу, чтобы при 25 Гц (2500) температура была ровно 20.0 C.
-            // Иначе ПИД разгонял частоту до >4500 и ловил перегрузку!
+            // Фикс формулы, чтобы не уходило в перегрузку
             temp_sup = 200 + ((freq - 2500) / 100) + ((sys_rand32_get() % 10) - 5);
             data.temp_supply_x10 = temp_sup;
+
+            // Пересчитываем в проценты для сигнала
+            int percent = (temp_sup + 200) * 100 / 600; 
+            if (input_mode == INPUT_4_20MA) {
+                data.current_ua = 4000 + (percent * 160);
+                data.voltage_mv = -1;
+            } else {
+                data.voltage_mv = percent * 100;
+                data.current_ua = -1;
+            }
 
             if (data.temp_outdoor_x10 < -100 && temp_sup < 50) {
                 data.faults |= FAULT_FREEZE_AIR;
             }
         }
 
-        // КОСТЫЛЬ: Раз в 5 секунд "оператор" чинит систему, 
-        // чтобы симулятор не вставал на постоянку
+        // КОСТЫЛЬ: автосброс аварии
         if (data.faults != FAULT_NONE && (cycle_count % 50) == 0) {
             if (current_profile == PROFILE_PUMP) level = 300; 
             if (current_profile == PROFILE_AHU) filter_dp = 50; 

@@ -11,12 +11,12 @@ static void cli_thread(void)
     LOG_INF("=====================================");
     LOG_INF("Нажми '1' + Enter для профиля НАСОС");
     LOG_INF("Нажми '2' + Enter для профиля ПРИТОЧКА (AHU)");
+    LOG_INF("Нажми '3' + Enter для входа 4-20мА");
+    LOG_INF("Нажми '4' + Enter для входа 0-10В");
     LOG_INF("=====================================");
 
     while (1) {
         fd_set fds;
-        // Таймаут 100 мс. Если ввода нет - select() просто вернет 0, 
-        // и Zephyr спокойно продолжит работу (сенсор, монитор и т.д.)
         struct timeval tv = { .tv_sec = 0, .tv_usec = 100000 };
         
         FD_ZERO(&fds);
@@ -35,14 +35,17 @@ static void cli_thread(void)
                 } else if (buf[0] == '2') {
                     current_profile = PROFILE_AHU;
                     LOG_WRN(">>> Переключено на ПРИТОЧКА (AHU) <<<");
+                } else if (buf[0] == '3') {
+                    input_mode = INPUT_4_20MA;
+                    LOG_WRN(">>> Режим входа: 4-20мА <<<");
+                } else if (buf[0] == '4') {
+                    input_mode = INPUT_0_10V;
+                    LOG_WRN(">>> Режим входа: 0-10В <<<");
                 }
             }
         }
-        
-        // Даем другим потокам поработать
         k_sleep(K_MSEC(10));
     }
 }
 
-// Приоритет 9 (самый низкий), чтобы CLI точно не мешал управлению
 K_THREAD_DEFINE(cli_tid, 2048, cli_thread, NULL, NULL, NULL, 9, 0, 0);
