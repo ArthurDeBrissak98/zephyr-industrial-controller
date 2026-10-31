@@ -10,5 +10,6 @@ target_sources(app PRIVATE
     src/control.c
     src/monitor.c
     src/modbus_client.c
-    src/cli.c
+    src/modbus_tcp.c
+    src/shell_cli.c
 )

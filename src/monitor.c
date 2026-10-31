@@ -86,7 +86,7 @@ static void monitor_thread(void)
                 }
             }
         }
-        k_sleep(K_SECONDS(2)); 
+        k_sleep(K_SECONDS(20)); 
     }
 }
 

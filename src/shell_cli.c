@@ -2,6 +2,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/shell/shell.h>
 #include <zephyr/logging/log.h>
+#include <strings.h> // Для strcasecmp (игнорирует регистр)
 
 LOG_MODULE_REGISTER(shell_app, LOG_LEVEL_INF);
 
@@ -10,14 +11,15 @@ LOG_MODULE_REGISTER(shell_app, LOG_LEVEL_INF);
 static int cmd_set_profile(const struct shell *sh, size_t argc, char **argv)
 {
     if (argc != 2) {
-        shell_error(sh, "Usage: set_profile <pump|ahu>");
+        shell_error(sh, "Usage: set profile <pump|ahu>"); // Исправил подсказку
         return -EINVAL;
     }
 
-    if (strcmp(argv[1], "pump") == 0) {
+    // Используем strcasecmp, чтобы работало и AHU, и ahu
+    if (strcasecmp(argv[1], "pump") == 0) {
         current_profile = PROFILE_PUMP;
         shell_print(sh, "Profile set to PUMP (Насос)");
-    } else if (strcmp(argv[1], "ahu") == 0) {
+    } else if (strcasecmp(argv[1], "ahu") == 0) {
         current_profile = PROFILE_AHU;
         shell_print(sh, "Profile set to AHU (Приточка)");
     } else {
@@ -30,14 +32,14 @@ static int cmd_set_profile(const struct shell *sh, size_t argc, char **argv)
 static int cmd_set_mode(const struct shell *sh, size_t argc, char **argv)
 {
     if (argc != 2) {
-        shell_error(sh, "Usage: set_mode <4-20ma|0-10v>");
+        shell_error(sh, "Usage: set mode <4-20ma|0-10v>"); // Исправил подсказку
         return -EINVAL;
     }
 
-    if (strcmp(argv[1], "4-20ma") == 0) {
+    if (strcasecmp(argv[1], "4-20ma") == 0) {
         input_mode = INPUT_4_20MA;
         shell_print(sh, "Input mode: 4-20mA");
-    } else if (strcmp(argv[1], "0-10v") == 0) {
+    } else if (strcasecmp(argv[1], "0-10v") == 0) {
         input_mode = INPUT_0_10V;
         shell_print(sh, "Input mode: 0-10V");
     } else {
