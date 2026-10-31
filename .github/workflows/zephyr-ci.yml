@@ -1,0 +1,22 @@
+name: Zephyr Build and Test
+
+on: [push, pull_request]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/zephyrproject-rtos/zephyr-build:latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: West Init
+        run: west init -l .
+
+      - name: West Update
+        run: west update
+
+      - name: Run Tests with Twister
+        run: |
+          ./zephyr/scripts/twister -T tests -p native_sim
