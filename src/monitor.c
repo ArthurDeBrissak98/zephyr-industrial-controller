@@ -13,15 +13,22 @@ void alert_isr(const void *arg) {
 static void monitor_thread(void)
 {
     struct sensor_data data;
+    uint32_t previous_faults = FAULT_NONE;
+    int64_t next_report_ms = 0;
 
     while (1) {
-        int ret = k_msgq_get(&monitor_msgq, &data, K_MSEC(2500));
+        int ret = k_msgq_get(&monitor_msgq, &data, K_FOREVER);
 
         if (ret == 0) {
-            struct sensor_data latest;
-            while (k_msgq_get(&monitor_msgq, &latest, K_NO_WAIT) == 0) {
-                data = latest;
+            int64_t now = k_uptime_get();
+            bool faults_changed = data.faults != previous_faults;
+            previous_faults = data.faults;
+
+            // Очередь читаем постоянно, обычные показания выводим раз в 20 секунд.
+            if (!faults_changed && !data.profile_changed && now < next_report_ms) {
+                continue;
             }
+            next_report_ms = now + 20000;
 
             if (data.profile_changed) {
                 LOG_INF("--- МОНИТОР: ПРОФИЛЬ/РЕЖИМ ПЕРЕКЛЮЧЕН ---");
@@ -86,7 +93,6 @@ static void monitor_thread(void)
                 }
             }
         }
-        k_sleep(K_SECONDS(20)); 
     }
 }
 

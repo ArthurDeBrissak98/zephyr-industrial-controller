@@ -57,7 +57,6 @@ static void control_thread(void)
             if (data.profile_changed) {
                 pid.integral = 0;
                 pid.prev_error = 0;
-                pid.current_freq = 2500; 
             }
 
             // Обработка аварии

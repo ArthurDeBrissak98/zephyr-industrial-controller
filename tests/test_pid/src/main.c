@@ -45,4 +45,38 @@ ZTEST(pid_tests, test_pid_limits)
     zassert_equal(result, 5000, "PID exceeded max frequency limit");
 }
 
+static int control_sample(uint32_t faults, bool changed)
+{
+    struct sensor_data sample = {
+        .setpoint_x10 = 500,
+        .level_percent_x10 = 500,
+        .faults = faults,
+        .profile_changed = changed,
+    };
+    int command;
+
+    zassert_ok(k_msgq_put(&sensor_msgq, &sample, K_SECONDS(1)));
+    zassert_ok(k_msgq_get(&modbus_tx_msgq, &command, K_SECONDS(1)));
+    return command;
+}
+
+ZTEST(pid_tests, test_mode_change_after_fault_preserves_soft_start)
+{
+    current_profile = PROFILE_PUMP;
+    zassert_equal(control_sample(FAULT_WIRE_BREAK, false), 0);
+    zassert_equal(control_sample(FAULT_NONE, true), 100,
+                  "Changing mode must not jump from stop to 25 Hz");
+}
+
+ZTEST(pid_tests, test_profile_change_while_running_preserves_frequency)
+{
+    current_profile = PROFILE_PUMP;
+    zassert_equal(control_sample(FAULT_OVERLOAD, false), 0);
+    for (int step = 1; step <= 10; step++) {
+        zassert_equal(control_sample(FAULT_NONE, false), step * 100);
+    }
+    zassert_equal(control_sample(FAULT_NONE, true), 1100,
+                  "Resetting PID history must preserve the current frequency");
+}
+
 ZTEST_SUITE(pid_tests, NULL, NULL, NULL, NULL, NULL);

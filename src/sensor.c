@@ -51,8 +51,6 @@ static void sensor_thread(void)
             level = 500; 
             filter_dp = 50;
             k_msgq_purge(&sensor_msgq);
-            k_msgq_purge(&monitor_msgq);
-            k_msgq_put(&monitor_msgq, &data, K_NO_WAIT); // Будим монитор
         }
 
         // --- ОБРАБОТКА ПЕРЕКЛЮЧЕНИЯ РЕЖИМА ВХОДА (ток/напряжение) ---
@@ -64,8 +62,6 @@ static void sensor_thread(void)
             level = 500;
             filter_dp = 50;
             k_msgq_purge(&sensor_msgq);
-            k_msgq_purge(&monitor_msgq);
-            k_msgq_put(&monitor_msgq, &data, K_NO_WAIT);
         }
 
         data.freq_hz_x100 = freq;
@@ -79,7 +75,7 @@ static void sensor_thread(void)
         }
 
         // Раз в 10 сек роняем связь на 2 сек (для проверки защиты)
-        if ((cycle_count % 100) >= 80) {
+        if (input_mode == INPUT_4_20MA && (cycle_count % 100) >= 80) {
             data.faults |= FAULT_WIRE_BREAK;
             data.current_ua = 2000;
             data.level_percent_x10 = -1;
@@ -144,6 +140,12 @@ static void sensor_thread(void)
             if (data.temp_outdoor_x10 < -100 && temp_sup < 50) {
                 data.faults |= FAULT_FREEZE_AIR;
             }
+        }
+
+        // Расчёт сигнала приточки выше мог затереть аварийные 2 мА.
+        if (data.faults & FAULT_WIRE_BREAK) {
+            data.current_ua = 2000;
+            data.voltage_mv = -1;
         }
 
         // КОСТЫЛЬ: автосброс аварии раз в 5 секунд
