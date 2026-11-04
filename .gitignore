@@ -2,6 +2,7 @@
 build/
 build-watchdog/
 build-hw/
+build-hw-modbus/
 zephyr/
 *.d
 

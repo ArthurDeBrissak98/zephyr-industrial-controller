@@ -26,4 +26,9 @@ config APP_WATCHDOG
       Requires an enabled watchdog0 devicetree alias. Feed only after a
       completed polling cycle; crash_test suspends that thread for testing.
 
+config APP_MODBUS
+    bool "Controller Modbus RTU server"
+    depends on MODBUS_SERIAL && MODBUS_SERVER
+    default n
+
 source "Kconfig.zephyr"

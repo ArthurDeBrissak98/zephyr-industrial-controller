@@ -1,4 +1,5 @@
 #include "controller_app.h"
+#include "controller_modbus.h"
 #include "controller_watchdog.h"
 #include <zephyr/shell/shell.h>
 #include <errno.h>
@@ -307,3 +308,21 @@ static int cmd_crash_test(const struct shell *sh, size_t argc, char **argv)
 
 SHELL_CMD_ARG_REGISTER(crash_test, NULL, "Остановить поток опроса для проверки WDT",
                        cmd_crash_test, 1, 0);
+
+static int cmd_modbus_status(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+    uint16_t regs[CONTROLLER_MODBUS_REGISTER_COUNT];
+    controller_modbus_snapshot(regs);
+    int error = controller_modbus_error();
+    shell_print(sh, "modbus_ready=%s error=%d unit_id=1 baud=19200 format=8N2",
+                error ? "no" : "yes", error);
+    shell_print(sh, "reg0_state=%u reg1_faults=0x%x reg2_warnings=0x%x",
+                regs[0], regs[1], regs[2]);
+    shell_print(sh, "reg3_measured_x10=%d reg4_setpoint_x10=%d",
+                (int16_t)regs[3], (int16_t)regs[4]);
+    return 0;
+}
+SHELL_CMD_ARG_REGISTER(modbus_status, NULL, "Карта Holding Registers Modbus",
+                       cmd_modbus_status, 1, 0);

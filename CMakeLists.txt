@@ -4,7 +4,7 @@ project(industrial_controller)
 
 target_include_directories(app PRIVATE include)
 target_compile_options(app PRIVATE -Wall -Wextra)
-target_sources(app PRIVATE src/main.c src/controller.c src/sensor_signal.c src/protection.c src/controller_app.c src/shell_cli.c)
+target_sources(app PRIVATE src/main.c src/controller.c src/sensor_signal.c src/protection.c src/controller_app.c src/shell_cli.c src/controller_modbus.c)
 if(CONFIG_USE_HW_IO)
     target_sources(app PRIVATE src/io_hw.c src/io_scaling.c)
 else()

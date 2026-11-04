@@ -11,7 +11,7 @@ import tempfile
 
 
 class Console:
-    def __init__(self, elf, qemu, storage_dir=None, machine="lm3s6965evb"):
+    def __init__(self, elf, qemu, storage_dir=None, machine="lm3s6965evb", extra_args=None):
         self.storage = tempfile.TemporaryDirectory(prefix="controller-qemu-") if storage_dir is None else None
         workdir = self.storage.name if self.storage else str(storage_dir)
         elf = Path(elf).resolve()
@@ -20,7 +20,7 @@ class Console:
         self.process = subprocess.Popen(
             [qemu, "-machine", machine, "-cpu", "cortex-m3",
              "-display", "none", "-monitor", "none", "-serial", "stdio",
-             "-nic", "none", "-semihosting-config", "enable=on,target=native", "-kernel", str(elf)],
+             "-nic", "none", "-semihosting-config", "enable=on,target=native", "-kernel", str(elf)] + (extra_args or []),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=workdir,
         )
         self.closed = False
