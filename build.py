@@ -20,7 +20,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--clean", action="store_true", help="Очистить папку build.")
     parser.add_argument("-r", "--run", action="store_true", help="Запустить симулятор.")
-    parser.add_argument("-b", "--board", default="native_sim", help="Целевая плата.")
+    parser.add_argument("-b", "--board", default="qemu_cortex_m3", help="Целевая плата.")
     
     args = parser.parse_args()
 

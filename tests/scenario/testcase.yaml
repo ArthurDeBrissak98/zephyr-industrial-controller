@@ -1,0 +1,8 @@
+tests:
+  controller.scenario:
+    platform_allow:
+      - qemu_cortex_m3
+      - qemu_cortex_m3/ti_lm3s6965
+      - native_sim/native/64
+    tags: controller
+    timeout: 30

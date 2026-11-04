@@ -1,46 +1,65 @@
-name: Zephyr Build and Test
+name: Zephyr QEMU demo
 
 on: [push, pull_request]
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
-      ZEPHYR_TOOLCHAIN_VARIANT: host
-    
+      ZEPHYR_TOOLCHAIN_VARIANT: zephyr
+      QEMU_BIN_PATH: /usr/bin
+      ZEPHYR_BASE: ${{ github.workspace }}/../zephyr-workspace/zephyr
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Установить инструменты
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends git cmake ninja-build gperf \
-            ccache dfu-util device-tree-compiler wget python3-dev python3-pip python3-setuptools \
-            python3-tk python3-wheel python3-venv xz-utils file make gcc gcc-multilib g++-multilib libsdl2-dev libmagic1
-
-      - name: Install West
-        run: |
+          sudo apt-get install -y --no-install-recommends git python3-venv python3-dev \
+            cmake ninja-build gperf device-tree-compiler make curl xz-utils qemu-system-arm
           python3 -m venv "$RUNNER_TEMP/zephyr-venv"
           "$RUNNER_TEMP/zephyr-venv/bin/pip" install west
           echo "$RUNNER_TEMP/zephyr-venv/bin" >> "$GITHUB_PATH"
 
-      - name: Init Zephyr workspace (in separate folder)
+      - name: Установить ARM toolchain
         run: |
-          cd ${{ github.workspace }}/..
-          west init -m https://github.com/zephyrproject-rtos/zephyr --mr main zephyr-workspace
-          cd zephyr-workspace
-          west update
+          bash scripts/install_sdk.sh "$RUNNER_TEMP"
+          echo "ZEPHYR_SDK_INSTALL_DIR=$RUNNER_TEMP/zephyr-sdk-1.0.1" >> "$GITHUB_ENV"
 
-      - name: Install Zephyr Python dependencies
-        working-directory: ${{ github.workspace }}/../zephyr-workspace
+      - name: Подготовить Zephyr
+        working-directory: ${{ github.workspace }}/..
         run: |
+          git init zephyr-workspace/zephyr
+          git -C zephyr-workspace/zephyr remote add origin https://github.com/zephyrproject-rtos/zephyr
+          git -C zephyr-workspace/zephyr fetch --depth 1 origin 6848730b4b3f4d6e9151a0a8873955878be1a18d
+          git -C zephyr-workspace/zephyr checkout --detach FETCH_HEAD
+          west init -l zephyr-workspace/zephyr
+          cd zephyr-workspace
+          west update cmsis cmsis_6
           python -m pip install -r zephyr/scripts/requirements-base.txt \
             -r zephyr/scripts/requirements-build-test.txt \
             -r zephyr/scripts/requirements-run-test.txt
-          west zephyr-export
 
-      - name: Run Ztest via Twister
-        working-directory: ${{ github.workspace }}/../zephyr-workspace
-        run: |
-          ./zephyr/scripts/twister -T ${{ github.workspace }}/tests -p native_sim
+      - name: Собрать приложение
+        run: west build -b qemu_cortex_m3 -d build . -o=-j4
+
+      - name: Проверить логику и аварийный сценарий в QEMU
+        run: python "$ZEPHYR_BASE/scripts/twister" -T tests -p qemu_cortex_m3 -O twister-out -j 4
+
+      - name: Проверить команды Shell в QEMU
+        run: python scripts/demo_test.py --elf build/zephyr/zephyr.elf
+
+      - name: Опубликовать отчёт тестов
+        if: always()
+        run: python scripts/ci_summary.py
+
+      - name: Сохранить результаты
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-test-results
+          path: |
+            twister-out/twister.json
+            twister-out/twister*.xml
+            twister-out/**/handler.log
+            build/demo-test.log

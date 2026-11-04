@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""Проверка демонстрации через UART настоящего процесса QEMU."""
+import argparse
+import os
+from pathlib import Path
+import re
+import selectors
+import subprocess
+import time
+
+
+class Console:
+    def __init__(self, elf, qemu):
+        self.process = subprocess.Popen(
+            [qemu, "-machine", "lm3s6965evb", "-cpu", "cortex-m3",
+             "-display", "none", "-monitor", "none", "-serial", "stdio",
+             "-nic", "none", "-kernel", str(elf)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        )
+        self.selector = selectors.DefaultSelector()
+        self.selector.register(self.process.stdout, selectors.EVENT_READ)
+        self.transcript = []
+        try:
+            self.read_prompt()
+        except Exception:
+            self.close()
+            raise
+
+    def read_prompt(self, command=None):
+        output = b""
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            if self.selector.select(0.1):
+                chunk = os.read(self.process.stdout.fileno(), 65536)
+                if not chunk:
+                    raise RuntimeError("QEMU завершился до ответа консоли")
+                output += chunk
+                text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", output.decode(errors="replace"))
+                echo = text.find(command) if command else 0
+                if echo >= 0 and text.rfind("uart:~$ ") > echo:
+                    self.transcript.append(text)
+                    return text
+        raise TimeoutError("Нет приглашения Shell: " + output.decode(errors="replace"))
+
+    def command(self, text):
+        self.process.stdin.write((text + "\n").encode())
+        self.process.stdin.flush()
+        return self.read_prompt(text)
+
+    def status(self, state, active=None):
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            output = self.command("status")
+            if f"state={state}" in output and (active is None or f"active=0x{active:x}" in output):
+                return output
+            time.sleep(0.02)
+        raise AssertionError(f"Не дождались состояния {state}: {output}")
+
+    def close(self):
+        self.selector.close()
+        self.process.terminate()
+        try:
+            self.process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            self.process.kill()
+            self.process.wait()
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--elf", type=Path, default=Path("build/zephyr/zephyr.elf"))
+    parser.add_argument("--qemu", default="qemu-system-arm")
+    parser.add_argument("--log", type=Path, default=Path("build/demo-test.log"))
+    args = parser.parse_args()
+    console = Console(args.elf, args.qemu)
+    try:
+        console.status("READY", active=0)
+        assert "OK" in console.command("start")
+        time.sleep(0.3)
+        running = console.status("RUNNING")
+        assert int(re.search(r"output_x100=(\d+)", running)[1]) > 0
+        assert "OK" in console.command("inject wire-break on")
+        fault = console.status("FAULT", active=1)
+        assert "latched=0x1" in fault and "output_x100=0" in fault
+        assert "Команда отклонена" in console.command("reset")
+        journal = console.command("events")
+        assert re.search(r"t=\d+ms event=FAULT state=FAULT faults=0x1 current_ua=2000 frequency_x100=0", journal)
+        assert "OK" in console.command("inject wire-break off")
+        fault = console.status("FAULT", active=0)
+        assert "latched=0x1" in fault and "output_x100=0" in fault
+        assert "Команда отклонена" in console.command("start")
+        assert "OK" in console.command("reset")
+        time.sleep(0.2)
+        ready = console.status("READY", active=0)
+        assert "latched=0x0" in ready and "output_x100=0" in ready
+        assert "OK" in console.command("start")
+        console.status("RUNNING")
+        assert "OK" in console.command("stop")
+        console.status("READY")
+        assert "OK" in console.command("set profile ahu")
+        assert "profile=ahu" in console.status("READY")
+        assert "OK" in console.command("set mode 0-10v")
+        console.status("READY")
+        assert "Команда отклонена" in console.command("inject wire-break on")
+        print("PASS: пуск → обрыв → останов → журнал → устранение → сброс → отдельный пуск")
+    finally:
+        console.close()
+        args.log.parent.mkdir(parents=True, exist_ok=True)
+        args.log.write_text("\n".join(console.transcript))
+
+
+if __name__ == "__main__":
+    main()
