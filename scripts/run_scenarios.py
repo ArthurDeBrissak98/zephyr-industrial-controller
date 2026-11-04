@@ -11,7 +11,7 @@ import yaml
 from .demo_test import Console
 
 STATUS_FIELDS = {
-    "sensor_faults", "process_faults", "state", "profile", "mode", "active", "latched", "warnings", "output_x100",
+    "read_error", "sensor_faults", "process_faults", "state", "profile", "mode", "active", "latched", "warnings", "output_x100",
     "frequency_x100", "current_ua", "voltage_mv", "scaled_x10", "measured_x10",
     "signal_valid", "settings_ready", "settings_present", "settings_error",
     "pid_bias_x100", "pid_kp", "pid_ki", "pid_divisor", "active_names", "latched_names",

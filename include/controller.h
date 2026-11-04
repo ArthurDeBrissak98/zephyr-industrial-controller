@@ -36,6 +36,7 @@ struct controller_parameters {
 };
 
 struct sensor_sample {
+    int read_error;
     int current_ua;
     int voltage_mv;
     int scaled_x10;

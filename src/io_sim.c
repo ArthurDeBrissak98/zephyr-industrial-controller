@@ -5,7 +5,7 @@ static bool signal_override;
 static int signal_value;
 static int output_frequency;
 
-void controller_io_read(const struct controller_config *config, struct sensor_sample *sample)
+int controller_io_read(const struct controller_config *config, struct sensor_sample *sample)
 {
     // Небольшое отклонение от уставки зависит от команды приводу.
     int deviation = output_frequency > 0 ? (output_frequency - 2500) / 500 : 0;
@@ -24,6 +24,7 @@ void controller_io_read(const struct controller_config *config, struct sensor_sa
     if (wire_break && config->mode == INPUT_4_20MA) {
         sample->current_ua = 2000;
     }
+    return 0;
 }
 
 void controller_io_write(int frequency_x100)
