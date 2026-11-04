@@ -71,6 +71,7 @@ static void adc_worker(void *a, void *b, void *c)
 
 K_THREAD_DEFINE(adc_worker_thread, 1536, adc_worker, NULL, NULL, NULL, 5, 0, 0);
 
+// REQ-ADC-01
 int controller_io_read(const struct controller_config *config, struct sensor_sample *sample)
 {
     *sample = (struct sensor_sample) {

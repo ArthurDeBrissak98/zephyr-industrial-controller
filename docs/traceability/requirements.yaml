@@ -1,0 +1,265 @@
+version: 1
+source_manual:
+  product: ABB ACS880
+  edition: null
+  document_id: null
+  reference_status: not_verified
+  note: Функциональные ориентиры, не подтверждённые ссылки на пункты мануала. Численные уставки и алгоритмы ниже
+    заданы спецификацией демонстрационного проекта.
+requirements:
+- id: REQ-SENS-01
+  requirement: Ток ниже 3600 мкА вызывает WIRE_BREAK до фильтрации.
+  origin: acs880_analogy
+  acs880_topic: Контроль потери сигнала аналогового входа
+  code:
+  - file: src/sensor_signal.c
+    symbol: sensor_signal_process
+  verification:
+  - kind: ztest
+    file: tests/signal/src/main.c
+    suite: signal_tests
+    name: test_current_tolerance_and_fault_boundaries
+  - kind: scenario
+    file: scenarios/controller.yaml
+    name: wire_break
+- id: REQ-SENS-02
+  requirement: Выход тока выше 21000 мкА или напряжения за 0–10000 мВ немедленно останавливает выход.
+  origin: acs880_analogy
+  acs880_topic: Контроль допустимого диапазона аналогового входа
+  code:
+  - file: src/controller.c
+    symbol: controller_update_locked
+  verification:
+  - kind: ztest
+    file: tests/input_fault/src/main.c
+    suite: input_fault_tests
+    name: test_current_above_range
+  - kind: scenario
+    file: scenarios/controller.yaml
+    name: voltage_overrange
+- id: REQ-SENS-03
+  requirement: Профиль задаёт масштабирование входа; измерение усредняется по четырём исправным отсчётам.
+  origin: acs880_analogy
+  acs880_topic: Масштабирование и фильтрация аналогового входа
+  code:
+  - file: src/sensor_signal.c
+    symbol: sensor_signal_process
+  verification:
+  - kind: ztest
+    file: tests/signal/src/main.c
+    suite: signal_tests
+    name: test_pump_current_scaling
+  - kind: ztest
+    file: tests/signal/src/main.c
+    suite: signal_tests
+    name: test_ahu_scaling_in_both_modes
+  - kind: ztest
+    file: tests/signal/src/main.c
+    suite: signal_tests
+    name: test_moving_average_and_window_wrap
+  - kind: ztest
+    file: tests/signal/src/main.c
+    suite: signal_tests
+    name: test_fault_is_not_filtered_and_recovery_starts_fresh
+- id: REQ-PROT-01
+  requirement: Технологическая защита учитывает порог, задержку и гистерезис.
+  origin: acs880_analogy
+  acs880_topic: Настраиваемые технологические защиты
+  code:
+  - file: src/protection.c
+    symbol: protection_update
+  verification:
+  - kind: ztest
+    file: tests/protection/src/main.c
+    suite: protection_tests
+    name: test_low_delay_boundary
+  - kind: ztest
+    file: tests/protection/src/main.c
+    suite: protection_tests
+    name: test_short_spike_restarts_delay
+  - kind: ztest
+    file: tests/protection/src/main.c
+    suite: protection_tests
+    name: test_high_delay_and_hysteresis
+- id: REQ-PROT-02
+  requirement: Предупреждение не останавливает выход; аварии датчика и процесса учитываются раздельно.
+  origin: acs880_analogy
+  acs880_topic: Предупреждения и аварии
+  code:
+  - file: src/controller.c
+    symbol: update_protections
+  verification:
+  - kind: ztest
+    file: tests/controller/src/main.c
+    suite: controller_logic
+    name: test_warning_then_trip_and_manual_reset
+  - kind: ztest
+    file: tests/controller/src/main.c
+    suite: controller_logic
+    name: test_active_trip_survives_sensor_fault_until_hysteresis_clear
+  - kind: scenario
+    file: scenarios/controller.yaml
+    name: warning_without_stop
+- id: REQ-CTRL-01
+  requirement: Авария фиксируется до устранения причины и ручного reset; для запуска нужен отдельный start.
+  origin: acs880_analogy
+  acs880_topic: Фиксация и ручной сброс аварии
+  code:
+  - file: src/controller.c
+    symbol: controller_reset_locked
+  verification:
+  - kind: ztest
+    file: tests/scenario/src/main.c
+    suite: controller_scenario
+    name: test_wire_break_stop_journal_reset_restart
+- id: REQ-PI-01
+  requirement: PI использует фактический dt, ограничивает интегратор и выход, не накапливает ошибку в сторону насыщения.
+  origin: acs880_analogy
+  acs880_topic: Регулятор технологического процесса
+  code:
+  - file: src/controller.c
+    symbol: update_pi
+  verification:
+  - kind: ztest
+    file: tests/controller/src/main.c
+    suite: controller_logic
+    name: test_pi_integrates_elapsed_time
+  - kind: ztest
+    file: tests/controller/src/main.c
+    suite: controller_logic
+    name: test_ten_saturated_ticks_do_not_accumulate_integral
+  - kind: ztest
+    file: tests/controller/src/main.c
+    suite: controller_logic
+    name: test_pi_random_sequences_preserve_bounds
+- id: REQ-LOG-01
+  requirement: Кольцевой журнал хранит причину, время и контекст события, сохраняя порядок при переполнении.
+  origin: acs880_analogy
+  acs880_topic: Журнал событий и аварий
+  code:
+  - file: src/controller.c
+    symbol: record_event
+  verification:
+  - kind: ztest
+    file: tests/controller/src/main.c
+    suite: controller_logic
+    name: test_journal_records_reason_signal_time_and_stop
+  - kind: ztest
+    file: tests/controller/src/main.c
+    suite: controller_logic
+    name: test_journal_wrap_preserves_order
+- id: REQ-LOG-02
+  requirement: Очистка истории под мьютексом не снимает аварию и сохраняет сквозную нумерацию.
+  origin: project
+  acs880_topic: null
+  code:
+  - file: src/controller.c
+    symbol: controller_events_clear
+  verification:
+  - kind: ztest
+    file: tests/controller/src/main.c
+    suite: controller_logic
+    name: test_clear_history_keeps_fault_and_continues_journal
+- id: REQ-CONC-01
+  requirement: Публичные операции контроллера захватывают его мьютекс и освобождают его при отказе.
+  origin: project
+  acs880_topic: null
+  code:
+  - file: src/controller.c
+    symbol: controller_update
+  verification:
+  - kind: ztest
+    file: tests/controller/src/main.c
+    suite: controller_logic
+    name: test_public_api_waits_for_controller_mutex
+  - kind: ztest
+    file: tests/controller/src/main.c
+    suite: controller_logic
+    name: test_rejected_configuration_releases_mutex
+- id: REQ-ADC-01
+  requirement: Ожидание ADC ограничено 20 мс; незавершённый запрос не перезаписывается, ошибка останавливает контроллер.
+  origin: project
+  acs880_topic: null
+  code:
+  - file: src/io_hw.c
+    symbol: controller_io_read
+  verification:
+  - kind: ztest
+    file: tests/io_hw/src/main.c
+    suite: hw_io
+    name: test_timeout_does_not_reuse_pending_buffer
+  - kind: ztest
+    file: tests/io_hw/src/main.c
+    suite: hw_io
+    name: test_adc_error_stops_and_latches_fault
+- id: REQ-WDT-01
+  requirement: Watchdog кормится только после завершения основного цикла; зависание вызывает аппаратный reset.
+  origin: project
+  acs880_topic: null
+  code:
+  - file: src/main.c
+    symbol: main
+  verification:
+  - kind: python
+    file: scripts/test_watchdog.py
+    name: run
+- id: REQ-NVS-01
+  requirement: Настройки с неверной CRC или версией не применяются частично; перезапуск не запускает привод.
+  origin: project
+  acs880_topic: null
+  code:
+  - file: src/settings_codec.c
+    symbol: controller_settings_decode
+  verification:
+  - kind: ztest
+    file: tests/settings/src/main.c
+    suite: settings_tests
+    name: test_corrupted_record_does_not_change_output
+  - kind: ztest
+    file: tests/settings/src/main.c
+    suite: settings_tests
+    name: test_unknown_version_and_wrong_length
+  - kind: scenario
+    file: scenarios/controller.yaml
+    name: nvs_corrupted_crc_restores_defaults
+  - kind: scenario
+    file: scenarios/controller.yaml
+    name: nvs_restart_and_erase
+- id: REQ-MBUS-01
+  requirement: FC03 предоставляет пять регистров состояния; каждый callback читает данные под мьютексом.
+  origin: project
+  acs880_topic: null
+  code:
+  - file: src/controller_modbus.c
+    symbol: controller_modbus_snapshot
+  verification:
+  - kind: ztest
+    file: tests/modbus/src/main.c
+    suite: modbus_map
+    name: test_register_map_and_invalid_addresses
+  - kind: scenario
+    file: scenarios/modbus_read_state.yaml
+    name: modbus_read_state
+  - kind: python
+    file: scripts/test_modbus.py
+    name: run
+- id: REQ-MBUS-02
+  requirement: Запись уставки проверяется по профилю и сохраняется между тактами, не снимая аварии.
+  origin: project
+  acs880_topic: null
+  code:
+  - file: src/controller_app.c
+    symbol: controller_app_setpoint_set
+  verification:
+  - kind: ztest
+    file: tests/modbus/src/main.c
+    suite: modbus_map
+    name: test_setpoint_survives_polling_and_rejected_writes
+  - kind: ztest
+    file: tests/modbus/src/main.c
+    suite: modbus_map
+    name: test_negative_ahu_setpoint_and_profile_defaults
+  - kind: ztest
+    file: tests/modbus/src/main.c
+    suite: modbus_map
+    name: test_fault_state_is_visible_and_writes_do_not_reset_it

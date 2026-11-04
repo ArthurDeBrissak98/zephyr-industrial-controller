@@ -1,6 +1,7 @@
 #include "protection.h"
 #include <string.h>
 
+// REQ-PROT-01
 bool protection_update(struct protection_state *state, const struct protection_config *config,
                        bool low_limit, int value_x10, int64_t now_ms)
 {

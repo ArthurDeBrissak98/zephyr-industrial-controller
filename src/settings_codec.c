@@ -48,6 +48,7 @@ int controller_settings_encode(const struct controller_parameters *parameters,
     return 0;
 }
 
+// REQ-NVS-01
 int controller_settings_decode(const uint8_t *data, size_t size,
                                 struct controller_parameters *parameters)
 {

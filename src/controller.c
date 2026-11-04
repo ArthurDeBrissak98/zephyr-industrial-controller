@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <string.h>
 
+// REQ-LOG-01
 static void record_event(struct controller *ctrl, enum event_type type,
                          uint32_t faults, uint32_t warnings, int64_t now_ms)
 {
@@ -41,6 +42,7 @@ static void protection_defaults(struct controller *ctrl)
         (struct protection_config) { pump ? 950 : 380, pump ? 20 : 10, 1000, true };
 }
 
+// REQ-PROT-02
 static void update_protections(struct controller *ctrl, int64_t now_ms)
 {
     uint32_t previous_warnings = ctrl->active_warnings;
@@ -128,6 +130,7 @@ static int64_t pi_target(const struct pid_config *config, int64_t error, int64_t
         config->divisor;
 }
 
+// REQ-PI-01
 static void update_pi(struct controller *ctrl, int64_t dt_ms)
 {
     const struct pid_config *config = &ctrl->config.pid;
@@ -155,6 +158,7 @@ static void update_pi(struct controller *ctrl, int64_t dt_ms)
     ctrl->frequency_x100 += difference;
 }
 
+// REQ-SENS-02
 static void controller_update_locked(struct controller *ctrl, const struct sensor_sample *sample,
                        int64_t now_ms)
 {
@@ -233,6 +237,7 @@ static void controller_stop_locked(struct controller *ctrl, int64_t now_ms)
     }
 }
 
+// REQ-CTRL-01
 static int controller_reset_locked(struct controller *ctrl, int64_t now_ms)
 {
     if (ctrl->state != STATE_FAULT) return -EALREADY;
@@ -330,6 +335,7 @@ const char *controller_event_name(enum event_type type)
     }
 }
 
+// REQ-CONC-01
 void controller_update(struct controller *ctrl, const struct sensor_sample *sample, int64_t now_ms)
 {
     k_mutex_lock(&ctrl->mutex, K_FOREVER);
@@ -407,6 +413,7 @@ int controller_parameters_apply(struct controller *ctrl,
     return ret;
 }
 
+// REQ-LOG-02
 void controller_events_clear(struct controller *ctrl)
 {
     k_mutex_lock(&ctrl->mutex, K_FOREVER);
