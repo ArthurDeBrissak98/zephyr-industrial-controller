@@ -27,8 +27,11 @@ sudo apt-get install -y --no-install-recommends git python3-venv python3-dev \
 python3 -m venv ../zephyr-venv
 . ../zephyr-venv/bin/activate
 pip install west
-west init -m https://github.com/zephyrproject-rtos/zephyr \
-  --mr 6848730b4b3f4d6e9151a0a8873955878be1a18d ../zephyr-workspace
+git init ../zephyr-workspace/zephyr
+git -C ../zephyr-workspace/zephyr remote add origin https://github.com/zephyrproject-rtos/zephyr
+git -C ../zephyr-workspace/zephyr fetch --depth 1 origin 6848730b4b3f4d6e9151a0a8873955878be1a18d
+git -C ../zephyr-workspace/zephyr checkout --detach FETCH_HEAD
+west init -l ../zephyr-workspace/zephyr
 cd ../zephyr-workspace
 west update cmsis cmsis_6
 pip install -r zephyr/scripts/requirements-base.txt \
