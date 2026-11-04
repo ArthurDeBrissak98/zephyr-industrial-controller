@@ -7,7 +7,6 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       ZEPHYR_TOOLCHAIN_VARIANT: zephyr
-      ZEPHYR_SDK_INSTALL_DIR: ${{ runner.temp }}/zephyr-sdk-1.0.1
       QEMU_BIN_PATH: /usr/bin
       ZEPHYR_BASE: ${{ github.workspace }}/../zephyr-workspace/zephyr
     steps:
@@ -23,7 +22,9 @@ jobs:
           echo "$RUNNER_TEMP/zephyr-venv/bin" >> "$GITHUB_PATH"
 
       - name: Установить ARM toolchain
-        run: bash scripts/install_sdk.sh "$RUNNER_TEMP"
+        run: |
+          bash scripts/install_sdk.sh "$RUNNER_TEMP"
+          echo "ZEPHYR_SDK_INSTALL_DIR=$RUNNER_TEMP/zephyr-sdk-1.0.1" >> "$GITHUB_ENV"
 
       - name: Подготовить Zephyr
         working-directory: ${{ github.workspace }}/..
