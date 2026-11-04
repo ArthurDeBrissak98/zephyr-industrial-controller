@@ -1,5 +1,6 @@
 #include "controller_app.h"
 #include "controller_io.h"
+#include "controller_settings.h"
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <errno.h>
@@ -10,6 +11,9 @@ static struct controller controller;
 static bool signal_injected;
 static bool wire_break_injected;
 static int injected_value;
+static bool settings_ready;
+static bool settings_present;
+static int settings_error;
 
 void controller_app_init(void)
 {
@@ -18,6 +22,9 @@ void controller_app_init(void)
     signal_injected = false;
     wire_break_injected = false;
     injected_value = 0;
+    settings_ready = false;
+    settings_present = false;
+    settings_error = 0;
     controller_io_inject_wire_break(false);
     controller_io_inject_signal(false, 0);
     controller_io_write(0);
@@ -130,6 +137,9 @@ void controller_app_status(struct controller_status *status)
         .signal_injected = signal_injected,
         .wire_break_injected = wire_break_injected,
         .injected_value = injected_value,
+        .settings_ready = settings_ready,
+        .settings_present = settings_present,
+        .settings_error = settings_error,
     };
     for (int i = 0; i < PROTECTION_COUNT; i++) {
         status->protections[i] = controller.protections[i];
@@ -170,6 +180,87 @@ int controller_app_protection_configure(enum protection_id id, struct protection
     k_mutex_lock(&controller_lock, K_FOREVER);
     k_mutex_lock(&controller.mutex, K_FOREVER);
     int ret = controller_protection_configure(&controller, id, config, k_uptime_get());
+    k_mutex_unlock(&controller.mutex);
+    k_mutex_unlock(&controller_lock);
+    return ret;
+}
+
+#ifdef CONFIG_APP_SETTINGS
+static int load_settings_locked(void)
+{
+    if (controller.state == STATE_RUNNING || controller.state == STATE_FAULT) return -EBUSY;
+    struct controller_parameters parameters;
+    int ret = controller_settings_read(&parameters);
+    if (!ret) ret = controller_parameters_apply(&controller, &parameters, k_uptime_get());
+    if (!ret) settings_present = true;
+    if (ret == -ENOENT) settings_present = false;
+    return ret;
+}
+#endif
+
+int controller_app_settings_init(void)
+{
+    int ret = -ENOTSUP;
+    k_mutex_lock(&controller_lock, K_FOREVER);
+    k_mutex_lock(&controller.mutex, K_FOREVER);
+#ifdef CONFIG_APP_SETTINGS
+    ret = controller_settings_init();
+    settings_ready = ret == 0;
+    if (!ret) ret = load_settings_locked();
+    settings_error = ret == -ENOENT ? 0 : ret;
+#endif
+    k_mutex_unlock(&controller.mutex);
+    k_mutex_unlock(&controller_lock);
+    return ret;
+}
+
+int controller_app_settings_save(void)
+{
+    int ret = -ENOTSUP;
+    k_mutex_lock(&controller_lock, K_FOREVER);
+    k_mutex_lock(&controller.mutex, K_FOREVER);
+#ifdef CONFIG_APP_SETTINGS
+    if (!settings_ready) ret = -ENODEV;
+    else if (controller.state == STATE_RUNNING || controller.state == STATE_FAULT) ret = -EBUSY;
+    else {
+        struct controller_parameters parameters;
+        controller_parameters_get(&controller, &parameters);
+        ret = controller_settings_write(&parameters);
+        if (!ret) settings_present = true;
+    }
+    settings_error = ret;
+#endif
+    k_mutex_unlock(&controller.mutex);
+    k_mutex_unlock(&controller_lock);
+    return ret;
+}
+
+int controller_app_settings_load(void)
+{
+    int ret = -ENOTSUP;
+    k_mutex_lock(&controller_lock, K_FOREVER);
+    k_mutex_lock(&controller.mutex, K_FOREVER);
+#ifdef CONFIG_APP_SETTINGS
+    ret = settings_ready ? load_settings_locked() : -ENODEV;
+    settings_error = ret;
+#endif
+    k_mutex_unlock(&controller.mutex);
+    k_mutex_unlock(&controller_lock);
+    return ret;
+}
+
+int controller_app_settings_erase(void)
+{
+    int ret = -ENOTSUP;
+    k_mutex_lock(&controller_lock, K_FOREVER);
+    k_mutex_lock(&controller.mutex, K_FOREVER);
+#ifdef CONFIG_APP_SETTINGS
+    if (!settings_ready) ret = -ENODEV;
+    else if (controller.state == STATE_RUNNING || controller.state == STATE_FAULT) ret = -EBUSY;
+    else ret = controller_settings_erase();
+    if (!ret) settings_present = false;
+    settings_error = ret;
+#endif
     k_mutex_unlock(&controller.mutex);
     k_mutex_unlock(&controller_lock);
     return ret;

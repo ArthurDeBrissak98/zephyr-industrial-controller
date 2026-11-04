@@ -105,6 +105,12 @@ static int cmd_status(const struct shell *sh, size_t argc, char **argv)
                 status.signal_injected ? "yes" : "no", status.injected_value,
                 status.config.mode == INPUT_4_20MA ? "uA" : "mV",
                 status.wire_break_injected ? "yes" : "no");
+    shell_print(sh, "settings_ready=%s settings_present=%s settings_error=%d",
+                status.settings_ready ? "yes" : "no", status.settings_present ? "yes" : "no",
+                status.settings_error);
+    shell_print(sh, "pid_bias_x100=%d pid_kp=%d pid_ki=%d pid_divisor=%d",
+                status.config.pid.bias_x100, status.config.pid.kp,
+                status.config.pid.ki, status.config.pid.divisor);
     char names[96];
     format_flags(names, sizeof(names), status.active_faults, fault_names, ARRAY_SIZE(fault_names));
     shell_print(sh, "active_names=%s", names);
@@ -238,6 +244,42 @@ SHELL_STATIC_SUBCMD_SET_CREATE(protection_commands,
     SHELL_SUBCMD_SET_END
 );
 SHELL_CMD_REGISTER(protect, &protection_commands, "Технологические защиты", NULL);
+
+static int cmd_config_save(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+    return command_result(sh, controller_app_settings_save());
+}
+
+static int cmd_config_load(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+    return command_result(sh, controller_app_settings_load());
+}
+
+static int cmd_config_erase(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+    return command_result(sh, controller_app_settings_erase());
+}
+
+static int cmd_config_show(const struct shell *sh, size_t argc, char **argv)
+{
+    cmd_status(sh, argc, argv);
+    return cmd_protection_show(sh, argc, argv);
+}
+
+SHELL_STATIC_SUBCMD_SET_CREATE(config_commands,
+    SHELL_CMD_ARG(save, NULL, "Сохранить настройки в NVS", cmd_config_save, 1, 0),
+    SHELL_CMD_ARG(load, NULL, "Загрузить настройки из NVS", cmd_config_load, 1, 0),
+    SHELL_CMD_ARG(erase, NULL, "Удалить сохранённые настройки", cmd_config_erase, 1, 0),
+    SHELL_CMD_ARG(show, NULL, "Текущие настройки и состояние NVS", cmd_config_show, 1, 0),
+    SHELL_SUBCMD_SET_END
+);
+SHELL_CMD_REGISTER(config, &config_commands, "Настройки в NVS", NULL);
 
 SHELL_STATIC_SUBCMD_SET_CREATE(settings,
     SHELL_CMD_ARG(profile, NULL, "Профиль: pump или ahu", cmd_profile, 2, 0),

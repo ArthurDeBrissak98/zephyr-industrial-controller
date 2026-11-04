@@ -18,8 +18,15 @@ struct controller_status {
     bool signal_injected;
     bool wire_break_injected;
     int injected_value;
+    bool settings_ready;
+    bool settings_present;
+    int settings_error;
 };
 
+int controller_app_settings_init(void);
+int controller_app_settings_save(void);
+int controller_app_settings_load(void);
+int controller_app_settings_erase(void);
 void controller_app_init(void);
 void controller_app_tick(void);
 int controller_app_start(void);
