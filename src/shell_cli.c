@@ -1,4 +1,5 @@
 #include "controller_app.h"
+#include "controller_watchdog.h"
 #include <zephyr/shell/shell.h>
 #include <errno.h>
 #include <string.h>
@@ -295,3 +296,13 @@ SHELL_CMD_ARG_REGISTER(status, NULL, "Состояние контроллера 
 SHELL_CMD_ARG_REGISTER(inject, NULL, "inject wire-break on|off; inject signal <value|off>", cmd_inject, 3, 0);
 SHELL_CMD_ARG_REGISTER(events, NULL, "Журнал событий", cmd_events, 1, 0);
 SHELL_CMD_REGISTER(set, &settings, "Настройки остановленного контроллера", NULL);
+
+static int cmd_crash_test(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+    return command_result(sh, controller_crash_test());
+}
+
+SHELL_CMD_ARG_REGISTER(crash_test, NULL, "Остановить поток опроса для проверки WDT",
+                       cmd_crash_test, 1, 0);

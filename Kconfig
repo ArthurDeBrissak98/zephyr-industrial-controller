@@ -10,4 +10,12 @@ config APP_SETTINGS
     select CRC
     default n
 
+config APP_WATCHDOG
+    bool "Hardware watchdog for the polling thread"
+    depends on WATCHDOG
+    default n
+    help
+      Requires an enabled watchdog0 devicetree alias. Feed only after a
+      completed polling cycle; crash_test suspends that thread for testing.
+
 source "Kconfig.zephyr"

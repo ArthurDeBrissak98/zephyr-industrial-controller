@@ -1,0 +1,6 @@
+/* Файловая NVS такая же, как у основной демонстрационной сборки. */
+#include "qemu_cortex_m3.overlay"
+
+&wdog0 {
+    status = "okay";
+};
