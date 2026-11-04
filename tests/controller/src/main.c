@@ -441,13 +441,14 @@ static void call_api(void *operation, void *unused1, void *unused2)
     case 6: controller_event_get(&ctrl, 0, &event); break;
     case 7: controller_parameters_get(&ctrl, &api_parameters); break;
     case 8: controller_parameters_apply(&ctrl, &api_parameters, 100); break;
+    case 9: controller_events_clear(&ctrl); break;
     }
     k_sem_give(&api_finished);
 }
 
 ZTEST(controller_logic, test_public_api_waits_for_controller_mutex)
 {
-    for (int op = 0; op < 9; op++) {
+    for (int op = 0; op < 10; op++) {
         controller_init(&ctrl);
         controller_update(&ctrl, &healthy, 0);
         controller_parameters_get(&ctrl, &api_parameters);
@@ -759,6 +760,36 @@ ZTEST(controller_logic, test_pi_random_sequences_preserve_bounds)
                          "seed=%u tick=%d", seeds[seed], tick);
         }
     }
+}
+
+ZTEST(controller_logic, test_clear_history_keeps_fault_and_continues_journal)
+{
+    controller_update(&ctrl, &healthy, 0);
+    zassert_ok(controller_start(&ctrl, 0));
+    for (int i = 0; i < EVENT_CAPACITY; i++) {
+        controller_stop(&ctrl, i * 100 + 1);
+        zassert_ok(controller_start(&ctrl, i * 100 + 2));
+    }
+    struct sensor_sample broken = healthy;
+    broken.current_ua = 2000;
+    controller_update(&ctrl, &broken, 4000);
+    zassert_equal(ctrl.event_count, EVENT_CAPACITY);
+    uint32_t sequence = ctrl.event_sequence;
+    controller_events_clear(&ctrl);
+    controller_events_clear(&ctrl);
+    zassert_equal(ctrl.event_count, 0);
+    zassert_equal(ctrl.event_head, 0);
+    zassert_equal(ctrl.state, STATE_FAULT);
+    zassert_equal(ctrl.sensor_faults, FAULT_WIRE_BREAK);
+    zassert_equal(ctrl.latched_faults, FAULT_WIRE_BREAK);
+    zassert_equal(controller_reset(&ctrl, 4001), -EBUSY);
+    struct controller_event event;
+    zassert_false(controller_event_get(&ctrl, 0, &event));
+    controller_update(&ctrl, &healthy, 4100);
+    zassert_true(controller_event_get(&ctrl, 0, &event));
+    zassert_equal(event.type, EVENT_FAULT_CLEARED);
+    zassert_equal(event.sequence, sequence + 1);
+    zassert_equal(ctrl.latched_faults, FAULT_WIRE_BREAK);
 }
 
 ZTEST_SUITE(controller_logic, NULL, NULL, before, NULL, NULL);

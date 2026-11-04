@@ -88,6 +88,7 @@ def main():
     try:
         assert "Команда отклонена" in console.command("crash_test")
         initial = console.status("READY", active=0)
+        assert "sensor_fault_names=none" in initial and "process_fault_names=none" in initial
         assert "active_names=none" in initial and "latched_names=none" in initial
         assert "signal_injected=no" in initial and "wire_break_injected=no" in initial
         assert "OK" in console.command("start")
@@ -198,6 +199,14 @@ def main():
         combined = console.status("FAULT", active=9)
         assert "active_names=WIRE_BREAK,PROCESS_HIGH" in combined
         assert "latched_names=WIRE_BREAK,PROCESS_HIGH" in combined
+        assert "sensor_fault_names=WIRE_BREAK" in combined
+        assert "process_fault_names=PROCESS_HIGH" in combined
+        assert "OK" in console.command("faults clear_history")
+        assert "event=" not in console.command("events")
+        unchanged = console.status("FAULT", active=9)
+        assert "latched_names=WIRE_BREAK,PROCESS_HIGH" in unchanged
+        assert "Команда отклонена" in console.command("reset")
+        assert "OK" in console.command("faults clear_history")
         assert "OK" in console.command("inject signal off")
         assert "OK" in console.command("inject wire-break off")
         assert "OK" in console.command("reset")

@@ -100,6 +100,7 @@ int controller_parameters_apply(struct controller *ctrl,
                                 const struct controller_parameters *parameters, int64_t now_ms);
 bool controller_event_get(struct controller *ctrl, size_t index,
                           struct controller_event *event);
+void controller_events_clear(struct controller *ctrl);
 const char *controller_state_name(enum controller_state state);
 const char *controller_event_name(enum event_type type);
 

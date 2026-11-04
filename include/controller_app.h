@@ -40,6 +40,7 @@ int controller_app_protection_configure(enum protection_id id, struct protection
 int controller_app_inject(bool enabled);
 int controller_app_inject_signal(bool enabled, int value);
 void controller_app_status(struct controller_status *status);
+void controller_app_events_clear(void);
 size_t controller_app_events(struct controller_event *events, size_t capacity);
 
 #endif

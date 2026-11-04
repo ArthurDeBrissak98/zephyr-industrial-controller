@@ -297,3 +297,10 @@ int controller_app_settings_erase(void)
     k_mutex_unlock(&controller_lock);
     return ret;
 }
+
+void controller_app_events_clear(void)
+{
+    k_mutex_lock(&controller_lock, K_FOREVER);
+    controller_events_clear(&controller);
+    k_mutex_unlock(&controller_lock);
+}
