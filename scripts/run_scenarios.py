@@ -5,12 +5,13 @@ import re
 import sys
 import tempfile
 import time
+import zlib
 
 import yaml
 from .demo_test import Console
 
 STATUS_FIELDS = {
-    "state", "profile", "mode", "active", "latched", "warnings", "output_x100",
+    "sensor_faults", "process_faults", "state", "profile", "mode", "active", "latched", "warnings", "output_x100",
     "frequency_x100", "current_ua", "voltage_mv", "scaled_x10", "measured_x10",
     "signal_valid", "settings_ready", "settings_present", "settings_error",
     "pid_bias_x100", "pid_kp", "pid_ki", "pid_divisor", "active_names", "latched_names",
@@ -53,7 +54,7 @@ def load_scenarios(path):
 def validate_step(step):
     if not isinstance(step, dict):
         raise ValueError("Шаг должен быть словарём")
-    actions = set(step) & {"command", "status", "wait_ms", "restart"}
+    actions = set(step) & {"command", "status", "wait_ms", "restart", "corrupt_settings_crc"}
     if len(actions) != 1:
         raise ValueError("В шаге должно быть ровно одно действие")
     action = next(iter(actions))
@@ -82,8 +83,8 @@ def validate_step(step):
     elif action == "wait_ms":
         if type(step["wait_ms"]) is not int or not 0 <= step["wait_ms"] <= 5000:
             raise ValueError("wait_ms должен быть от 0 до 5000")
-    elif step["restart"] is not True:
-        raise ValueError("restart должен быть true")
+    elif step[action] is not True:
+        raise ValueError(f"{action} должен быть true")
 
 
 def status_matches(output, expected):
@@ -101,6 +102,25 @@ def status_matches(output, expected):
         elif actual != wanted:
             return False
     return True
+
+
+def corrupt_settings_crc(storage):
+    """Портим CRC приложения, сохраняя корректную контрольную сумму NVS."""
+    path = Path(storage, "controller_flash.bin")
+    image = bytearray(path.read_bytes())
+    marker = b"1CIZ" + (1).to_bytes(4, "little")
+    offset = image.find(marker)
+    if offset < 0 or image.find(marker, offset + 1) >= 0 or offset + 104 > len(image):
+        raise ValueError("Нужна ровно одна запись настроек версии 1")
+    blob = image[offset:offset + 100]
+    stored_crc = int.from_bytes(blob[96:100], "little")
+    if zlib.crc32(blob[:96]) != stored_crc:
+        raise ValueError("CRC настроек уже повреждена")
+    if zlib.crc32(blob) != int.from_bytes(image[offset + 100:offset + 104], "little"):
+        raise ValueError("Некорректная CRC записи NVS")
+    image[offset + 96] ^= 1
+    image[offset + 100:offset + 104] = zlib.crc32(image[offset:offset + 100]).to_bytes(4, "little")
+    path.write_bytes(image)
 
 
 def run_scenario(scenario, elf, qemu, log):
@@ -130,6 +150,9 @@ def run_scenario(scenario, elf, qemu, log):
                 else:
                     log.extend(console.transcript)
                     console.close()
+                    console = None
+                    if "corrupt_settings_crc" in step:
+                        corrupt_settings_crc(storage)
                     console = Console(elf, qemu, storage)
             print(f"PASS: {scenario['name']}")
         finally:
