@@ -169,8 +169,14 @@ static void controller_update_locked(struct controller *ctrl, const struct senso
     }
     uint32_t previous_faults = ctrl->active_faults;
 
-    struct signal_value signal = sensor_signal_process(&ctrl->signal_filter,
-        ctrl->config.profile, ctrl->config.mode, sample->current_ua, sample->voltage_mv);
+    struct signal_value signal;
+    if (sample->read_error) {
+        sensor_signal_reset(&ctrl->signal_filter);
+        signal = (struct signal_value) { .faults = FAULT_INPUT_IO };
+    } else {
+        signal = sensor_signal_process(&ctrl->signal_filter,
+            ctrl->config.profile, ctrl->config.mode, sample->current_ua, sample->voltage_mv);
+    }
     ctrl->sample = *sample;
     ctrl->sample.scaled_x10 = signal.scaled_x10;
     ctrl->sample.measured_x10 = signal.filtered_x10;

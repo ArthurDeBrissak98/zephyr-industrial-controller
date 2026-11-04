@@ -7,6 +7,7 @@
 #define FAULT_NONE 0U
 #define FAULT_WIRE_BREAK (1U << 0)
 #define FAULT_INPUT_RANGE (1U << 1)
+#define FAULT_INPUT_IO (1U << 4)
 #define SIGNAL_FILTER_SIZE 4
 
 enum controller_profile { PROFILE_PUMP, PROFILE_AHU };

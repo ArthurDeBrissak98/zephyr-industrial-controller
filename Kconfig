@@ -1,8 +1,16 @@
 mainmenu "Industrial controller"
 
+config USE_HW_IO
+    bool "Use hardware ADC inputs"
+    select ADC
+    default n
+    help
+      Exclusive ownership of the ADC device is required. Define two
+      io-channels in zephyr,user: current loop and voltage input.
+
 config APP_SIMULATED_IO
-    bool "Simulated sensors and drive"
-    default y
+    bool
+    default y if !USE_HW_IO
 
 config APP_SETTINGS
     bool "Controller settings in NVS"

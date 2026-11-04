@@ -55,6 +55,7 @@ struct named_flag {
 static const struct named_flag fault_names[] = {
     {FAULT_WIRE_BREAK, "WIRE_BREAK"},
     {FAULT_INPUT_RANGE, "INPUT_RANGE"},
+    {FAULT_INPUT_IO, "INPUT_IO"},
     {FAULT_PROCESS_LOW, "PROCESS_LOW"},
     {FAULT_PROCESS_HIGH, "PROCESS_HIGH"},
 };
@@ -95,7 +96,7 @@ static int cmd_status(const struct shell *sh, size_t argc, char **argv)
                 status.sample.current_ua, status.sample.voltage_mv);
     shell_print(sh, "sensor_faults=0x%x process_faults=0x%x",
                 status.sensor_faults, status.process_faults);
-    shell_print(sh, "warnings=0x%x", status.active_warnings);
+    shell_print(sh, "read_error=%d warnings=0x%x", status.sample.read_error, status.active_warnings);
     shell_print(sh, "frequency_x100=%d output_x100=%d",
                 status.frequency_x100, status.output_x100);
     shell_print(sh, "scaled_x10=%d measured_x10=%d signal_valid=%s",

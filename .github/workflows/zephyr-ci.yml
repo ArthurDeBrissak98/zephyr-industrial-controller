@@ -35,7 +35,7 @@ jobs:
           git -C zephyr-workspace/zephyr checkout --detach FETCH_HEAD
           west init -l zephyr-workspace/zephyr
           cd zephyr-workspace
-          west update cmsis cmsis_6
+          west update cmsis cmsis_6 hal_nordic
           python -m pip install -r zephyr/scripts/requirements-base.txt \
             -r zephyr/scripts/requirements-build-test.txt \
             -r zephyr/scripts/requirements-run-test.txt
@@ -57,6 +57,9 @@ jobs:
 
       - name: Проверить отказ и повреждение flash
         run: python -m scripts.test_storage --elf build/zephyr/zephyr.elf
+
+      - name: Проверить сборку аппаратного ADC для nRF52840 DK
+        run: west build -b nrf52840dk/nrf52840 -d build-hw . -o=-j4
 
       - name: Собрать аппаратный watchdog для MPS2
         run: west build -b mps2/an385 -d build-watchdog . -o=-j4
