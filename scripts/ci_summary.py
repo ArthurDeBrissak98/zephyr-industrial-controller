@@ -9,11 +9,15 @@ from pathlib import Path
 def main():
     root = Path("twister-out")
     report = root / "twister.json"
+    failed = []
     with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as summary:
         summary.write("## Тесты QEMU\n\n")
         if report.exists():
             data = json.loads(report.read_text())
             for suite in data.get("testsuites", []):
+                if suite.get("status") in {"failed", "error"}:
+                    failed.append(suite.get("name", ""))
+                    annotate(f"{suite.get('name')}: {suite.get('reason', '')}")
                 summary.write(html.escape(
                     f"{suite.get('name')}: {suite.get('status')} — {suite.get('reason', '')}"
                 ) + "\n\n")
@@ -21,8 +25,16 @@ def main():
             if path.name not in {"build.log", "handler.log", "handler_stderr.log"}:
                 continue
             text = path.read_text(errors="replace")[-6000:]
+            if any(name in path.parts for name in failed):
+                annotate(f"{path}\n{text[-3500:]}")
             summary.write(f"<details><summary>{html.escape(str(path))}</summary>\n\n")
             summary.write(f"<pre>{html.escape(text)}</pre>\n\n</details>\n\n")
+
+
+def annotate(text):
+    # Аннотации видны и без входа в GitHub, в отличие от полных логов.
+    escaped = text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print(f"::error title=QEMU diagnostics::{escaped}")
 
 
 if __name__ == "__main__":
