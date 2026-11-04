@@ -128,6 +128,8 @@ void controller_app_status(struct controller_status *status)
         .config = controller.config,
         .sample = controller.sample,
         .active_warnings = controller.active_warnings,
+        .sensor_faults = controller.sensor_faults,
+        .process_faults = controller.process_faults,
         .active_faults = controller.active_faults,
         .latched_faults = controller.latched_faults,
         .frequency_x100 = controller.frequency_x100,

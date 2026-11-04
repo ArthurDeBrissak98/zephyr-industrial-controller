@@ -45,6 +45,7 @@ static void update_protections(struct controller *ctrl, int64_t now_ms)
 {
     uint32_t previous_warnings = ctrl->active_warnings;
     ctrl->active_warnings = 0;
+    ctrl->process_faults = 0;
     for (int i = 0; i < PROTECTION_COUNT; i++) {
         struct protection_state *state = &ctrl->protection_states[i];
         if (ctrl->sample_valid) {
@@ -59,8 +60,8 @@ static void update_protections(struct controller *ctrl, int64_t now_ms)
         switch (i) {
         case PROTECTION_LOW_WARNING: ctrl->active_warnings |= WARNING_LOW; break;
         case PROTECTION_HIGH_WARNING: ctrl->active_warnings |= WARNING_HIGH; break;
-        case PROTECTION_LOW_TRIP: ctrl->active_faults |= FAULT_PROCESS_LOW; break;
-        case PROTECTION_HIGH_TRIP: ctrl->active_faults |= FAULT_PROCESS_HIGH; break;
+        case PROTECTION_LOW_TRIP: ctrl->process_faults |= FAULT_PROCESS_LOW; break;
+        case PROTECTION_HIGH_TRIP: ctrl->process_faults |= FAULT_PROCESS_HIGH; break;
         }
     }
     uint32_t added = ctrl->active_warnings & ~previous_warnings;
@@ -174,8 +175,9 @@ static void controller_update_locked(struct controller *ctrl, const struct senso
     ctrl->sample.scaled_x10 = signal.scaled_x10;
     ctrl->sample.measured_x10 = signal.filtered_x10;
     ctrl->sample_valid = signal.faults == FAULT_NONE;
-    ctrl->active_faults = signal.faults;
+    ctrl->sensor_faults = signal.faults;
     update_protections(ctrl, now_ms);
+    ctrl->active_faults = ctrl->sensor_faults | ctrl->process_faults;
 
     if (ctrl->active_faults != FAULT_NONE) {
         ctrl->latched_faults |= ctrl->active_faults;

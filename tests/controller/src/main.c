@@ -289,13 +289,19 @@ ZTEST(controller_logic, test_active_trip_survives_sensor_fault_until_hysteresis_
     sample.current_ua = 20000;
     controller_update(&ctrl, &sample, 0);
     zassert_equal(ctrl.active_faults, FAULT_PROCESS_HIGH);
+    zassert_equal(ctrl.sensor_faults, 0);
+    zassert_equal(ctrl.process_faults, FAULT_PROCESS_HIGH);
     sample.current_ua = 2000;
     controller_update(&ctrl, &sample, 100);
     zassert_equal(ctrl.active_faults, FAULT_PROCESS_HIGH | FAULT_WIRE_BREAK);
+    zassert_equal(ctrl.sensor_faults, FAULT_WIRE_BREAK);
+    zassert_equal(ctrl.process_faults, FAULT_PROCESS_HIGH);
     zassert_equal(controller_reset(&ctrl, 101), -EBUSY);
     sample.current_ua = 16000;
     controller_update(&ctrl, &sample, 200);
     zassert_equal(ctrl.active_faults, FAULT_PROCESS_HIGH);
+    zassert_equal(ctrl.sensor_faults, 0);
+    zassert_equal(ctrl.process_faults, FAULT_PROCESS_HIGH);
     zassert_equal(controller_reset(&ctrl, 201), -EBUSY);
     for (int i = 3; i <= 6; i++) controller_update(&ctrl, &healthy, i * 100);
     zassert_equal(ctrl.active_faults, 0);
@@ -666,6 +672,93 @@ ZTEST(controller_logic, test_configuration_resets_time_after_long_idle)
     zassert_ok(controller_start(&ctrl, 600000));
     controller_update(&ctrl, &sample, 600100);
     zassert_equal(ctrl.integral, 1000);
+}
+
+static int rejected_config_results[2];
+static bool reject_protection;
+static bool reject_busy;
+
+static void rejected_config_worker(void *a, void *b, void *c)
+{
+    ARG_UNUSED(a);
+    ARG_UNUSED(b);
+    ARG_UNUSED(c);
+    struct controller_config config = ctrl.config;
+    struct protection_config protection = ctrl.protections[PROTECTION_LOW_TRIP];
+    if (!reject_busy) {
+        config.pid.divisor = 0;
+        protection.hysteresis_x10 = -1;
+    }
+    for (int i = 0; i < 2; i++) {
+        rejected_config_results[i] = reject_protection ?
+            controller_protection_configure(&ctrl, PROTECTION_LOW_TRIP, protection, 0) :
+            controller_configure(&ctrl, config, 0);
+    }
+    k_sem_give(&api_finished);
+    // Поток остаётся жив: завершение потока само могло бы освободить мьютекс.
+    k_sleep(K_FOREVER);
+}
+
+ZTEST(controller_logic, test_rejected_configuration_releases_mutex)
+{
+    for (int operation = 0; operation < 2; operation++) {
+        for (int state = 0; state < 3; state++) {
+            controller_init(&ctrl);
+            reject_protection = operation != 0;
+            reject_busy = state != 0;
+            ctrl.state = state == 1 ? STATE_RUNNING : state == 2 ? STATE_FAULT : STATE_STOPPED;
+            k_sem_reset(&api_finished);
+            k_thread_create(&api_thread, api_stack, K_THREAD_STACK_SIZEOF(api_stack),
+                            rejected_config_worker, NULL, NULL, NULL, 5, 0, K_NO_WAIT);
+            int finished = k_sem_take(&api_finished, K_SECONDS(1));
+            int unlocked = k_mutex_lock(&ctrl.mutex, K_NO_WAIT);
+            if (!unlocked) k_mutex_unlock(&ctrl.mutex);
+            k_thread_abort(&api_thread);
+            zassert_ok(finished, "Configuration call hung");
+            zassert_ok(unlocked, "Rejected configuration kept the mutex");
+            zassert_equal(rejected_config_results[0], reject_busy ? -EBUSY : -EINVAL);
+            zassert_equal(rejected_config_results[1], reject_busy ? -EBUSY : -EINVAL);
+        }
+    }
+}
+
+static uint32_t pi_random(uint32_t *state)
+{
+    *state = *state * 1664525U + 1013904223U;
+    return *state;
+}
+
+ZTEST(controller_logic, test_pi_random_sequences_preserve_bounds)
+{
+    const uint32_t seeds[] = {1, 0x12345678U, 0xdeadbeefU, UINT32_MAX};
+    for (size_t seed = 0; seed < ARRAY_SIZE(seeds); seed++) {
+        controller_init(&ctrl);
+        // Разные коэффициенты: от нулевых до сильного насыщения.
+        ctrl.config.pid = (struct pid_config) {2500, seed == 0 ? 0 : 50, seed == 0 ? 0 : 5, 10};
+        for (int i = 0; i < PROTECTION_COUNT; i++) ctrl.protections[i].enabled = false;
+        struct sensor_sample sample = healthy;
+        int64_t now = 0;
+        controller_update(&ctrl, &sample, now);
+        zassert_ok(controller_start(&ctrl, now));
+        uint32_t random = seeds[seed];
+        for (int tick = 0; tick < 3000; tick++) {
+            uint32_t value = pi_random(&random);
+            int64_t dt = (int64_t)(value % 2001) - 500;
+            if (tick % 97 == 0) dt = INT64_C(1000000000000);
+            now += dt;
+            sample.current_ua = 4000 + pi_random(&random) % 16001;
+            value = pi_random(&random);
+            sample.setpoint_x10 = (tick % 101 == 0) ? INT_MAX :
+                (tick % 103 == 0) ? INT_MIN : (int)(value % 20001) - 10000;
+            controller_update(&ctrl, &sample, now);
+            zassert_equal(ctrl.state, STATE_RUNNING);
+            zassert_true(ctrl.integral >= -CONTROLLER_INTEGRAL_LIMIT &&
+                         ctrl.integral <= CONTROLLER_INTEGRAL_LIMIT,
+                         "seed=%u tick=%d", seeds[seed], tick);
+            zassert_true(ctrl.frequency_x100 >= 0 && ctrl.frequency_x100 <= 5000,
+                         "seed=%u tick=%d", seeds[seed], tick);
+        }
+    }
 }
 
 ZTEST_SUITE(controller_logic, NULL, NULL, before, NULL, NULL);

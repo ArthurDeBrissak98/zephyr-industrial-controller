@@ -7,7 +7,7 @@ scenarios:
         expect: [OK]
       - command: inject signal 25000
         expect: [OK, "unit=uA"]
-      - status: {state: FAULT, active: 2, latched: 2, output_x100: 0, signal_valid: "no"}
+      - status: {state: FAULT, sensor_faults: 2, process_faults: 0, active: 2, latched: 2, output_x100: 0, signal_valid: "no"}
       - command: reset
         expect: ["Команда отклонена: -16"]
       - command: config load
@@ -43,14 +43,14 @@ scenarios:
         expect: [OK]
       - command: inject signal 10001
         expect: [OK, "unit=mV"]
-      - status: {state: FAULT, active: 2, output_x100: 0}
+      - status: {state: FAULT, sensor_faults: 2, process_faults: 0, active: 2, output_x100: 0}
       - command: inject signal off
         expect: [OK]
       - command: reset
         expect: [OK]
       - command: inject signal -1
         expect: [OK]
-      - status: {state: FAULT, active: 2, output_x100: 0}
+      - status: {state: FAULT, sensor_faults: 2, process_faults: 0, active: 2, output_x100: 0}
 
   - name: warning_without_stop
     steps:
@@ -127,3 +127,18 @@ scenarios:
       - status: {state: READY, profile: pump, settings_present: "yes", output_x100: 0}
       - command: protect show
         expect: ["low-warning enabled=yes threshold_x10=200 hysteresis_x10=20 delay_ms=800"]
+
+  - name: nvs_corrupted_crc_restores_defaults
+    steps:
+      - command: set profile ahu
+        expect: [OK]
+      - command: set mode 0-10v
+        expect: [OK]
+      - command: protect set low-warning 60 10 700
+        expect: [OK]
+      - command: config save
+        expect: [OK]
+      - corrupt_settings_crc: true
+      - status: {state: READY, profile: pump, mode: 4-20ma, settings_ready: "yes", settings_present: "no", settings_error: -77, output_x100: 0, pid_kp: 50}
+      - command: protect show
+        expect: ["low-warning enabled=yes threshold_x10=100 hysteresis_x10=20 delay_ms=500"]

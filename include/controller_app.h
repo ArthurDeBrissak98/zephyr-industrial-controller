@@ -9,6 +9,8 @@ struct controller_status {
     struct sensor_sample sample;
     struct protection_config protections[PROTECTION_COUNT];
     uint32_t active_warnings;
+    uint32_t sensor_faults;
+    uint32_t process_faults;
     uint32_t active_faults;
     uint32_t latched_faults;
     int frequency_x100;

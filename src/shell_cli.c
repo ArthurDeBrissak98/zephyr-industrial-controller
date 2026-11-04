@@ -92,6 +92,8 @@ static int cmd_status(const struct shell *sh, size_t argc, char **argv)
     shell_print(sh, "active=0x%x latched=0x%x current_ua=%d voltage_mv=%d",
                 status.active_faults, status.latched_faults,
                 status.sample.current_ua, status.sample.voltage_mv);
+    shell_print(sh, "sensor_faults=0x%x process_faults=0x%x",
+                status.sensor_faults, status.process_faults);
     shell_print(sh, "warnings=0x%x", status.active_warnings);
     shell_print(sh, "frequency_x100=%d output_x100=%d",
                 status.frequency_x100, status.output_x100);
