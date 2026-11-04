@@ -1,0 +1,7 @@
+mainmenu "Industrial controller"
+
+config APP_SIMULATED_IO
+    bool "Simulated sensors and drive"
+    default y
+
+source "Kconfig.zephyr"

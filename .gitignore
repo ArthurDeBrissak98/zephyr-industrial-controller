@@ -20,3 +20,5 @@ zephyr-sdk-*/
 zephyr-sdk-*.tar.gz
 zephyr-sdk-*.zip
 zephyr-sdk-*.xz
+# Результаты Twister
+twister-out*/

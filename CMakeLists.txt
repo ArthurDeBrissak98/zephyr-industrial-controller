@@ -1,15 +1,11 @@
 cmake_minimum_required(VERSION 3.28.0)
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
-project(system_monitor)
+project(industrial_controller)
 
 target_include_directories(app PRIVATE include)
-
-target_sources(app PRIVATE
-    src/main.c
-    src/sensor.c
-    src/control.c
-    src/monitor.c
-    src/modbus_client.c
-    src/modbus_tcp.c
-    src/shell_cli.c
-)
+target_sources(app PRIVATE src/main.c src/controller.c src/controller_app.c src/shell_cli.c)
+if(CONFIG_APP_SIMULATED_IO)
+    target_sources(app PRIVATE src/io_sim.c)
+else()
+    message(FATAL_ERROR "Добавьте реализацию controller_io.h для выбранной платы")
+endif()

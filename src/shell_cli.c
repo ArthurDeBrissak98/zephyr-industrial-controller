@@ -1,74 +1,99 @@
-#include "sensor.h"
-#include <zephyr/kernel.h>
+#include "controller_app.h"
 #include <zephyr/shell/shell.h>
-#include <zephyr/logging/log.h>
-#include <strings.h> // Для strcasecmp (игнорирует регистр)
+#include <errno.h>
+#include <string.h>
 
-LOG_MODULE_REGISTER(shell_app, LOG_LEVEL_INF);
-
-/* --- Обработчики команд --- */
-
-static int cmd_set_profile(const struct shell *sh, size_t argc, char **argv)
+static int command_result(const struct shell *sh, int ret)
 {
-    if (argc != 2) {
-        shell_error(sh, "Usage: set profile <pump|ahu>"); // Исправил подсказку
-        return -EINVAL;
-    }
+    if (ret) shell_error(sh, "Команда отклонена: %d", ret);
+    else shell_print(sh, "OK");
+    return ret;
+}
 
-    // Используем strcasecmp, чтобы работало и AHU, и ahu
-    if (strcasecmp(argv[1], "pump") == 0) {
-        current_profile = PROFILE_PUMP;
-        shell_print(sh, "Profile set to PUMP (Насос)");
-    } else if (strcasecmp(argv[1], "ahu") == 0) {
-        current_profile = PROFILE_AHU;
-        shell_print(sh, "Profile set to AHU (Приточка)");
-    } else {
-        shell_error(sh, "Unknown profile: %s", argv[1]);
-        return -EINVAL;
+static int cmd_start(const struct shell *sh, size_t argc, char **argv)
+{
+    return command_result(sh, controller_app_start());
+}
+
+static int cmd_stop(const struct shell *sh, size_t argc, char **argv)
+{
+    controller_app_stop();
+    return command_result(sh, 0);
+}
+
+static int cmd_reset(const struct shell *sh, size_t argc, char **argv)
+{
+    return command_result(sh, controller_app_reset());
+}
+
+static int cmd_status(const struct shell *sh, size_t argc, char **argv)
+{
+    struct controller_status status;
+    controller_app_status(&status);
+    shell_print(sh, "state=%s profile=%s mode=%s",
+                controller_state_name(status.state),
+                status.config.profile == PROFILE_PUMP ? "pump" : "ahu",
+                status.config.mode == INPUT_4_20MA ? "4-20ma" : "0-10v");
+    shell_print(sh, "active=0x%x latched=0x%x current_ua=%d voltage_mv=%d",
+                status.active_faults, status.latched_faults,
+                status.sample.current_ua, status.sample.voltage_mv);
+    shell_print(sh, "frequency_x100=%d output_x100=%d",
+                status.frequency_x100, status.output_x100);
+    return 0;
+}
+
+static int cmd_inject(const struct shell *sh, size_t argc, char **argv)
+{
+    if (strcmp(argv[1], "wire-break")) return command_result(sh, -EINVAL);
+    bool enabled;
+    if (!strcmp(argv[2], "on")) enabled = true;
+    else if (!strcmp(argv[2], "off")) enabled = false;
+    else return command_result(sh, -EINVAL);
+    return command_result(sh, controller_app_inject(enabled));
+}
+
+static int cmd_profile(const struct shell *sh, size_t argc, char **argv)
+{
+    struct controller_status status;
+    controller_app_status(&status);
+    if (!strcmp(argv[1], "pump")) status.config.profile = PROFILE_PUMP;
+    else if (!strcmp(argv[1], "ahu")) status.config.profile = PROFILE_AHU;
+    else return command_result(sh, -EINVAL);
+    return command_result(sh, controller_app_configure(status.config));
+}
+
+static int cmd_mode(const struct shell *sh, size_t argc, char **argv)
+{
+    struct controller_status status;
+    controller_app_status(&status);
+    if (!strcmp(argv[1], "4-20ma")) status.config.mode = INPUT_4_20MA;
+    else if (!strcmp(argv[1], "0-10v")) status.config.mode = INPUT_0_10V;
+    else return command_result(sh, -EINVAL);
+    return command_result(sh, controller_app_configure(status.config));
+}
+
+static int cmd_events(const struct shell *sh, size_t argc, char **argv)
+{
+    struct controller_event events[EVENT_CAPACITY];
+    size_t count = controller_app_events(events, EVENT_CAPACITY);
+    for (size_t i = 0; i < count; i++) {
+        const struct controller_event *e = &events[i];
+        shell_print(sh, "#%u t=%lldms event=%s state=%s faults=0x%x current_ua=%d frequency_x100=%d",
+                    e->sequence, (long long)e->timestamp_ms, controller_event_name(e->type),
+                    controller_state_name(e->state), e->faults, e->current_ua, e->frequency_x100);
     }
     return 0;
 }
 
-static int cmd_set_mode(const struct shell *sh, size_t argc, char **argv)
-{
-    if (argc != 2) {
-        shell_error(sh, "Usage: set mode <4-20ma|0-10v>"); // Исправил подсказку
-        return -EINVAL;
-    }
-
-    if (strcasecmp(argv[1], "4-20ma") == 0) {
-        input_mode = INPUT_4_20MA;
-        shell_print(sh, "Input mode: 4-20mA");
-    } else if (strcasecmp(argv[1], "0-10v") == 0) {
-        input_mode = INPUT_0_10V;
-        shell_print(sh, "Input mode: 0-10V");
-    } else {
-        shell_error(sh, "Unknown mode: %s", argv[1]);
-        return -EINVAL;
-    }
-    return 0;
-}
-
-static int cmd_get_status(const struct shell *sh, size_t argc, char **argv)
-{
-    ARG_UNUSED(argc);
-    ARG_UNUSED(argv);
-
-    shell_print(sh, "=== SYSTEM STATUS ===");
-    shell_print(sh, "Profile: %s", 
-                (current_profile == PROFILE_PUMP) ? "PUMP" : "AHU");
-    shell_print(sh, "Input mode: %s", 
-                (input_mode == INPUT_4_20MA) ? "4-20mA" : "0-10V");
-    return 0;
-}
-
-/* --- Регистрация команд --- */
-
-SHELL_STATIC_SUBCMD_SET_CREATE(sub_set,
-    SHELL_CMD(profile, NULL, "Set device profile (pump/ahu)", cmd_set_profile),
-    SHELL_CMD(mode,    NULL, "Set analog input mode (4-20ma/0-10v)", cmd_set_mode),
+SHELL_STATIC_SUBCMD_SET_CREATE(settings,
+    SHELL_CMD_ARG(profile, NULL, "Профиль: pump или ahu", cmd_profile, 2, 0),
+    SHELL_CMD_ARG(mode, NULL, "Вход: 4-20ma или 0-10v", cmd_mode, 2, 0),
     SHELL_SUBCMD_SET_END
 );
-
-SHELL_CMD_REGISTER(set, &sub_set, "Set system parameters", NULL);
-SHELL_CMD_REGISTER(status, NULL, "Print current system status", cmd_get_status);
+SHELL_CMD_ARG_REGISTER(start, NULL, "Пуск", cmd_start, 1, 0);
+SHELL_CMD_ARG_REGISTER(stop, NULL, "Останов", cmd_stop, 1, 0);
+SHELL_CMD_ARG_REGISTER(reset, NULL, "Сброс после устранения причины", cmd_reset, 1, 0);
+SHELL_CMD_ARG_REGISTER(status, NULL, "Состояние контроллера и выхода", cmd_status, 1, 0);
+SHELL_CMD_ARG_REGISTER(inject, NULL, "inject wire-break on|off", cmd_inject, 3, 0);
+SHELL_CMD_ARG_REGISTER(events, NULL, "Журнал событий", cmd_events, 1, 0);
+SHELL_CMD_REGISTER(set, &settings, "Настройки остановленного контроллера", NULL);

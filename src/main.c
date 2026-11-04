@@ -1,9 +1,12 @@
+#include "controller_app.h"
 #include <zephyr/kernel.h>
 
 int main(void)
 {
-    // Потоки запускаются автоматически через K_THREAD_DEFINE в других файлах.
-    // Просто спим, чтобы не грузить процессор.
-    k_sleep(K_FOREVER);
+    controller_app_init();
+    while (1) {
+        controller_app_tick();
+        k_sleep(K_MSEC(CONTROLLER_PERIOD_MS));
+    }
     return 0;
 }
