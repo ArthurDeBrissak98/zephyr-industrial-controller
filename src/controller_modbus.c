@@ -8,6 +8,7 @@
 
 static atomic_t interface_error = ATOMIC_INIT(-ENOTSUP);
 
+// REQ-MBUS-01
 void controller_modbus_snapshot(uint16_t regs[CONTROLLER_MODBUS_REGISTER_COUNT])
 {
     // status берёт замок приложения и мьютекс контроллера при копировании.

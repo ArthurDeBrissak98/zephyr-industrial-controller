@@ -40,6 +40,9 @@ jobs:
             -r zephyr/scripts/requirements-build-test.txt \
             -r zephyr/scripts/requirements-run-test.txt
 
+      - name: Проверить трассируемость требований
+        run: python scripts/check_traceability.py
+
       - name: Собрать приложение
         run: west build -b qemu_cortex_m3 -d build . -o=-j4
 

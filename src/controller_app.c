@@ -70,6 +70,7 @@ void controller_app_tick(void)
     k_mutex_unlock(&controller_lock);
 }
 
+// REQ-MBUS-02
 int controller_app_setpoint_set(int value)
 {
     k_mutex_lock(&controller_lock, K_FOREVER);

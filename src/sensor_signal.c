@@ -6,6 +6,8 @@ void sensor_signal_reset(struct signal_filter *filter)
     memset(filter, 0, sizeof(*filter));
 }
 
+// REQ-SENS-01
+// REQ-SENS-03
 struct signal_value sensor_signal_process(struct signal_filter *filter,
                                          enum controller_profile profile,
                                          enum input_mode mode,

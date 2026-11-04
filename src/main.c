@@ -47,6 +47,7 @@ int controller_crash_test(void)
 #endif
 }
 
+// REQ-WDT-01
 int main(void)
 {
     controller_app_init();
