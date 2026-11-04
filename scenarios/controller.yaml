@@ -1,0 +1,129 @@
+version: 1
+scenarios:
+  - name: current_overrange
+    steps:
+      - status: {state: READY, settings_ready: "yes", active: 0}
+      - command: start
+        expect: [OK]
+      - command: inject signal 25000
+        expect: [OK, "unit=uA"]
+      - status: {state: FAULT, active: 2, latched: 2, output_x100: 0, signal_valid: "no"}
+      - command: reset
+        expect: ["Команда отклонена: -16"]
+      - command: config load
+        expect: ["Команда отклонена: -16"]
+      - command: events
+        expect: ["event=FAULT", "fault_names=INPUT_RANGE"]
+      - command: inject signal off
+        expect: [OK]
+      - status: {state: FAULT, active: 0, latched: 2, output_x100: 0}
+      - command: reset
+        expect: [OK]
+      - status: {state: READY, latched: 0, output_x100: 0}
+
+  - name: wire_break
+    steps:
+      - status: {state: READY, active: 0}
+      - command: start
+        expect: [OK]
+      - command: inject signal 2000
+        expect: [OK]
+      - status: {state: FAULT, active: 1, latched: 1, output_x100: 0}
+      - command: reset
+        expect: ["Команда отклонена: -16"]
+      - command: events
+        expect: ["fault_names=WIRE_BREAK"]
+
+  - name: voltage_overrange
+    steps:
+      - command: set mode 0-10v
+        expect: [OK]
+      - status: {state: READY, mode: 0-10v}
+      - command: start
+        expect: [OK]
+      - command: inject signal 10001
+        expect: [OK, "unit=mV"]
+      - status: {state: FAULT, active: 2, output_x100: 0}
+      - command: inject signal off
+        expect: [OK]
+      - command: reset
+        expect: [OK]
+      - command: inject signal -1
+        expect: [OK]
+      - status: {state: FAULT, active: 2, output_x100: 0}
+
+  - name: warning_without_stop
+    steps:
+      - command: protect set low-warning 450 20 100
+        expect: [OK]
+      - command: protect disable low-trip
+        expect: [OK]
+      - command: start
+        expect: [OK]
+      - command: inject signal 10400
+        expect: [OK]
+      - status: {state: RUNNING, active: 0, warnings: 1}
+      - command: inject signal off
+        expect: [OK]
+      - status: {state: RUNNING, active: 0, warnings: 0}
+      - command: events
+        expect: ["event=WARNING", "event=WARNING_CLEARED"]
+
+  - name: nvs_restart_and_erase
+    steps:
+      - status: {state: READY, settings_present: "no", profile: pump}
+      - command: set profile ahu
+        expect: [OK]
+      - command: set mode 0-10v
+        expect: [OK]
+      - command: protect set low-warning 60 10 700
+        expect: [OK]
+      - command: protect set low-trip 10 10 900
+        expect: [OK]
+      - command: protect set high-warning 340 10 600
+        expect: [OK]
+      - command: protect set high-trip 390 10 1200
+        expect: [OK]
+      - command: protect disable high-warning
+        expect: [OK]
+      - command: config save
+        expect: [OK]
+      - restart: true
+      - status: {state: READY, profile: ahu, mode: 0-10v, settings_ready: "yes", settings_present: "yes", output_x100: 0}
+      - command: protect show
+        expect:
+          - "low-warning enabled=yes threshold_x10=60 hysteresis_x10=10 delay_ms=700"
+          - "low-trip enabled=yes threshold_x10=10 hysteresis_x10=10 delay_ms=900"
+          - "high-warning enabled=no threshold_x10=340 hysteresis_x10=10 delay_ms=600"
+          - "high-trip enabled=yes threshold_x10=390 hysteresis_x10=10 delay_ms=1200"
+      - command: start
+        expect: [OK]
+      - command: config save
+        expect: ["Команда отклонена: -16"]
+      - command: config load
+        expect: ["Команда отклонена: -16"]
+      - command: config erase
+        expect: ["Команда отклонена: -16"]
+      - command: stop
+        expect: [OK]
+      - command: config load
+        expect: [OK]
+      - status: {state: READY, output_x100: 0}
+      - command: config erase
+        expect: [OK]
+      - status: {settings_present: "no", profile: ahu}
+      - restart: true
+      - status: {state: READY, profile: pump, mode: 4-20ma, settings_present: "no", output_x100: 0}
+
+  - name: unsaved_changes_are_not_restored
+    steps:
+      - command: protect set low-warning 200 20 800
+        expect: [OK]
+      - command: config save
+        expect: [OK]
+      - command: set profile ahu
+        expect: [OK]
+      - restart: true
+      - status: {state: READY, profile: pump, settings_present: "yes", output_x100: 0}
+      - command: protect show
+        expect: ["low-warning enabled=yes threshold_x10=200 hysteresis_x10=20 delay_ms=800"]

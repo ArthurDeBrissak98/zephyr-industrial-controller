@@ -69,6 +69,43 @@ static void update_protections(struct controller *ctrl, int64_t now_ms)
     if (cleared) record_event(ctrl, EVENT_WARNING_CLEARED, 0, cleared, now_ms);
 }
 
+static int validate_config(struct controller_config config)
+{
+    if ((config.profile != PROFILE_PUMP && config.profile != PROFILE_AHU) ||
+        (config.mode != INPUT_4_20MA && config.mode != INPUT_0_10V)) return -EINVAL;
+    if (config.pid.bias_x100 < 0 || config.pid.bias_x100 > 5000 ||
+        config.pid.kp < 0 || config.pid.ki < 0 || config.pid.divisor <= 0) return -EINVAL;
+    return 0;
+}
+
+static int validate_protection(enum controller_profile profile, enum protection_id id,
+                               struct protection_config config)
+{
+    int minimum = profile == PROFILE_PUMP ? 0 : -200;
+    int maximum = profile == PROFILE_PUMP ? 1000 : 400;
+    bool low = id == PROTECTION_LOW_WARNING || id == PROTECTION_LOW_TRIP;
+    int64_t clear_limit = (int64_t)config.threshold_x10 +
+        (low ? config.hysteresis_x10 : -(int64_t)config.hysteresis_x10);
+    if (config.threshold_x10 < minimum || config.threshold_x10 > maximum ||
+        config.hysteresis_x10 < 0 || clear_limit < minimum || clear_limit > maximum ||
+        config.delay_ms < 0 || config.delay_ms > 60000) return -EINVAL;
+    return 0;
+}
+
+int controller_parameters_validate(const struct controller_parameters *parameters)
+{
+    if (validate_config(parameters->config)) return -EINVAL;
+    const struct protection_config *p = parameters->protections;
+    for (int i = 0; i < PROTECTION_COUNT; i++) {
+        if (validate_protection(parameters->config.profile, i, p[i])) return -EINVAL;
+    }
+    if (p[PROTECTION_LOW_TRIP].threshold_x10 >= p[PROTECTION_HIGH_TRIP].threshold_x10 ||
+        p[PROTECTION_LOW_WARNING].threshold_x10 >= p[PROTECTION_HIGH_WARNING].threshold_x10) {
+        return -EINVAL;
+    }
+    return 0;
+}
+
 void controller_init(struct controller *ctrl)
 {
     memset(ctrl, 0, sizeof(*ctrl));
@@ -204,10 +241,7 @@ static int controller_reset_locked(struct controller *ctrl, int64_t now_ms)
 static int controller_configure_locked(struct controller *ctrl, struct controller_config config,
                          int64_t now_ms)
 {
-    if ((config.profile != PROFILE_PUMP && config.profile != PROFILE_AHU) ||
-        (config.mode != INPUT_4_20MA && config.mode != INPUT_0_10V)) return -EINVAL;
-    if (config.pid.bias_x100 < 0 || config.pid.bias_x100 > 5000 ||
-        config.pid.kp < 0 || config.pid.ki < 0 || config.pid.divisor <= 0) return -EINVAL;
+    if (validate_config(config)) return -EINVAL;
     if (ctrl->state == STATE_RUNNING || ctrl->state == STATE_FAULT) return -EBUSY;
     if (ctrl->active_warnings) {
         record_event(ctrl, EVENT_WARNING_CLEARED, 0, ctrl->active_warnings, now_ms);
@@ -232,14 +266,8 @@ static int controller_protection_configure_locked(struct controller *ctrl, enum 
 {
     if ((unsigned int)id >= PROTECTION_COUNT) return -EINVAL;
     if (ctrl->state == STATE_RUNNING || ctrl->state == STATE_FAULT) return -EBUSY;
-    int minimum = ctrl->config.profile == PROFILE_PUMP ? 0 : -200;
-    int maximum = ctrl->config.profile == PROFILE_PUMP ? 1000 : 400;
+    if (validate_protection(ctrl->config.profile, id, config)) return -EINVAL;
     bool low = id == PROTECTION_LOW_WARNING || id == PROTECTION_LOW_TRIP;
-    int64_t clear_limit = (int64_t)config.threshold_x10 +
-        (low ? config.hysteresis_x10 : -(int64_t)config.hysteresis_x10);
-    if (config.threshold_x10 < minimum || config.threshold_x10 > maximum ||
-        config.hysteresis_x10 < 0 || clear_limit < minimum || clear_limit > maximum ||
-        config.delay_ms < 0 || config.delay_ms > 60000) return -EINVAL;
     enum protection_id opposite;
     switch (id) {
     case PROTECTION_LOW_TRIP: opposite = PROTECTION_HIGH_TRIP; break;
@@ -282,6 +310,7 @@ const char *controller_event_name(enum event_type type)
     case EVENT_WARNING: return "WARNING";
     case EVENT_WARNING_CLEARED: return "WARNING_CLEARED";
     case EVENT_PROTECTION_CHANGED: return "PROTECTION_CHANGED";
+    case EVENT_SETTINGS_LOADED: return "SETTINGS_LOADED";
     case EVENT_READY: return "READY";
     case EVENT_START: return "START";
     case EVENT_STOP: return "STOP";
@@ -346,4 +375,26 @@ bool controller_event_get(struct controller *ctrl, size_t index, struct controll
     bool found = controller_event_get_locked(ctrl, index, event);
     k_mutex_unlock(&ctrl->mutex);
     return found;
+}
+
+void controller_parameters_get(struct controller *ctrl, struct controller_parameters *parameters)
+{
+    k_mutex_lock(&ctrl->mutex, K_FOREVER);
+    parameters->config = ctrl->config;
+    memcpy(parameters->protections, ctrl->protections, sizeof(ctrl->protections));
+    k_mutex_unlock(&ctrl->mutex);
+}
+
+int controller_parameters_apply(struct controller *ctrl,
+                                const struct controller_parameters *parameters, int64_t now_ms)
+{
+    k_mutex_lock(&ctrl->mutex, K_FOREVER);
+    int ret = controller_parameters_validate(parameters);
+    if (!ret) ret = controller_configure_locked(ctrl, parameters->config, now_ms);
+    if (!ret) {
+        memcpy(ctrl->protections, parameters->protections, sizeof(ctrl->protections));
+        record_event(ctrl, EVENT_SETTINGS_LOADED, 0, ctrl->active_warnings, now_ms);
+    }
+    k_mutex_unlock(&ctrl->mutex);
+    return ret;
 }

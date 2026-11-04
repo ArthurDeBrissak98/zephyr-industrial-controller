@@ -7,16 +7,23 @@ import re
 import selectors
 import subprocess
 import time
+import tempfile
 
 
 class Console:
-    def __init__(self, elf, qemu):
+    def __init__(self, elf, qemu, storage_dir=None):
+        self.storage = tempfile.TemporaryDirectory(prefix="controller-qemu-") if storage_dir is None else None
+        workdir = self.storage.name if self.storage else str(storage_dir)
+        elf = Path(elf).resolve()
+        if os.path.dirname(qemu):
+            qemu = str(Path(qemu).resolve())
         self.process = subprocess.Popen(
             [qemu, "-machine", "lm3s6965evb", "-cpu", "cortex-m3",
              "-display", "none", "-monitor", "none", "-serial", "stdio",
-             "-nic", "none", "-kernel", str(elf)],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+             "-nic", "none", "-semihosting-config", "enable=on,target=native", "-kernel", str(elf)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=workdir,
         )
+        self.closed = False
         self.selector = selectors.DefaultSelector()
         self.selector.register(self.process.stdout, selectors.EVENT_READ)
         self.transcript = []
@@ -57,6 +64,9 @@ class Console:
         raise AssertionError(f"Не дождались состояния {state}: {output}")
 
     def close(self):
+        if self.closed:
+            return
+        self.closed = True
         self.selector.close()
         self.process.terminate()
         try:
@@ -64,6 +74,8 @@ class Console:
         except subprocess.TimeoutExpired:
             self.process.kill()
             self.process.wait()
+        if self.storage:
+            self.storage.cleanup()
 
 
 def main():

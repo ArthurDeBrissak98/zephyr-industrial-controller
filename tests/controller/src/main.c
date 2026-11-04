@@ -414,6 +414,7 @@ K_SEM_DEFINE(api_entered, 0, 1);
 K_SEM_DEFINE(api_finished, 0, 1);
 K_THREAD_STACK_DEFINE(api_stack, 2048);
 static struct k_thread api_thread;
+static struct controller_parameters api_parameters;
 
 static void call_api(void *operation, void *unused1, void *unused2)
 {
@@ -432,15 +433,18 @@ static void call_api(void *operation, void *unused1, void *unused2)
     case 4: controller_configure(&ctrl, config, 100); break;
     case 5: controller_protection_configure(&ctrl, PROTECTION_LOW_TRIP, protection, 100); break;
     case 6: controller_event_get(&ctrl, 0, &event); break;
+    case 7: controller_parameters_get(&ctrl, &api_parameters); break;
+    case 8: controller_parameters_apply(&ctrl, &api_parameters, 100); break;
     }
     k_sem_give(&api_finished);
 }
 
 ZTEST(controller_logic, test_public_api_waits_for_controller_mutex)
 {
-    for (int op = 0; op < 7; op++) {
+    for (int op = 0; op < 9; op++) {
         controller_init(&ctrl);
         controller_update(&ctrl, &healthy, 0);
+        controller_parameters_get(&ctrl, &api_parameters);
         k_sem_reset(&api_entered);
         k_sem_reset(&api_finished);
         k_mutex_lock(&ctrl.mutex, K_FOREVER);

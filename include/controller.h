@@ -15,7 +15,7 @@
 enum controller_state { STATE_STOPPED, STATE_READY, STATE_RUNNING, STATE_FAULT };
 enum event_type { EVENT_READY, EVENT_START, EVENT_STOP, EVENT_FAULT,
                   EVENT_FAULT_CLEARED, EVENT_RESET, EVENT_INPUT_CHANGED,
-                  EVENT_WARNING, EVENT_WARNING_CLEARED, EVENT_PROTECTION_CHANGED };
+                  EVENT_WARNING, EVENT_WARNING_CLEARED, EVENT_PROTECTION_CHANGED, EVENT_SETTINGS_LOADED };
 
 struct pid_config {
     int bias_x100;
@@ -28,6 +28,11 @@ struct controller_config {
     enum controller_profile profile;
     enum input_mode mode;
     struct pid_config pid;
+};
+
+struct controller_parameters {
+    struct controller_config config;
+    struct protection_config protections[PROTECTION_COUNT];
 };
 
 struct sensor_sample {
@@ -86,6 +91,10 @@ int controller_configure(struct controller *ctrl, struct controller_config confi
                          int64_t now_ms);
 int controller_protection_configure(struct controller *ctrl, enum protection_id id,
                                     struct protection_config config, int64_t now_ms);
+int controller_parameters_validate(const struct controller_parameters *parameters);
+void controller_parameters_get(struct controller *ctrl, struct controller_parameters *parameters);
+int controller_parameters_apply(struct controller *ctrl,
+                                const struct controller_parameters *parameters, int64_t now_ms);
 bool controller_event_get(struct controller *ctrl, size_t index,
                           struct controller_event *event);
 const char *controller_state_name(enum controller_state state);

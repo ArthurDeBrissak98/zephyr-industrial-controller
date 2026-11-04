@@ -10,3 +10,7 @@ if(CONFIG_APP_SIMULATED_IO)
 else()
     message(FATAL_ERROR "Добавьте реализацию controller_io.h для выбранной платы")
 endif()
+
+if(CONFIG_APP_SETTINGS)
+    target_sources(app PRIVATE src/controller_settings.c src/settings_codec.c)
+endif()

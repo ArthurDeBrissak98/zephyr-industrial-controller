@@ -22,3 +22,6 @@ zephyr-sdk-*.zip
 zephyr-sdk-*.xz
 # Результаты Twister
 twister-out*/
+
+# Файл flash для QEMU
+controller_flash.bin

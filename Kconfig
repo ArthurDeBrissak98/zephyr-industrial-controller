@@ -4,4 +4,10 @@ config APP_SIMULATED_IO
     bool "Simulated sensors and drive"
     default y
 
+config APP_SETTINGS
+    bool "Controller settings in NVS"
+    depends on SETTINGS_NVS
+    select CRC
+    default n
+
 source "Kconfig.zephyr"
