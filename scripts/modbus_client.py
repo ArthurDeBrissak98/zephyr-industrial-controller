@@ -60,6 +60,13 @@ class Client:
         payload = struct.pack(">BBHH", 1, 6, 4, value & 0xFFFF)
         require(self.exchange(payload, 8) == frame(payload), "FC06 echo mismatch")
 
+    def write_multiple(self, address, values, exception=0):
+        payload = struct.pack(">BBHHB", 1, 16, address, len(values), len(values) * 2)
+        payload += struct.pack(">" + "H" * len(values), *values)
+        expected = bytes([1, 0x90, exception]) if exception else payload[:6]
+        require(self.exchange(payload, 5 if exception else 8) == frame(expected),
+                "FC16 response mismatch")
+
     def silent(self, payload, corrupt=False):
         time.sleep(0.02)
         request = bytearray(frame(payload))

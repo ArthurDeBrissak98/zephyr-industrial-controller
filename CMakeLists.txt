@@ -14,3 +14,7 @@ endif()
 if(CONFIG_APP_SETTINGS)
     target_sources(app PRIVATE src/controller_settings.c src/settings_codec.c)
 endif()
+
+if(CONFIG_APP_MODBUS)
+    include(cmake/modbus_frame_handlers.cmake)
+endif()

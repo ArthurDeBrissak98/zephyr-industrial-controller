@@ -95,6 +95,22 @@ class ScenarioValidationTests(unittest.TestCase):
             with self.subTest(request=request), self.assertRaises(ValueError):
                 validate_step({"modbus_read": request})
 
+    def test_fc16_step_validation(self):
+        validate_step({"modbus_write_multiple": {"address": 4, "values": [600, 1], "expect_exception": 2}})
+        for request in (
+            {}, {"address": 4, "values": [600]},
+            {"address": True, "values": [600], "expect_exception": 0},
+            {"address": 65536, "values": [600], "expect_exception": 2},
+            {"address": 4, "values": [], "expect_exception": 0},
+            {"address": 4, "values": [True], "expect_exception": 0},
+            {"address": 4, "values": [65536], "expect_exception": 2},
+            {"address": 4, "values": [1] * 124, "expect_exception": 2},
+            {"address": 4, "values": [600], "expect_exception": True},
+        ):
+            with self.subTest(request=request), self.assertRaises(ValueError):
+                validate_step({"modbus_write_multiple": request})
+        load_scenarios("scenarios/modbus_atomic_write.yaml")
+
     def test_modbus_scenario_checks_ready_and_fault(self):
         scenario, = load_scenarios("scenarios/modbus_read_state.yaml")
         reads = [step["modbus_read"] for step in scenario["steps"] if "modbus_read" in step]

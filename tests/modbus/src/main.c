@@ -2,6 +2,7 @@
 #include "controller_app.h"
 #include <zephyr/ztest.h>
 #include <errno.h>
+#include <zephyr/sys/byteorder.h>
 
 static void before(void *fixture)
 {
@@ -101,6 +102,105 @@ ZTEST(modbus_map, test_warning_register)
     zassert_equal(regs[0], STATE_READY);
     zassert_equal(regs[1], 0);
     zassert_equal(regs[2], WARNING_LOW);
+}
+
+ZTEST(modbus_map, test_fc16_rejects_entire_request_before_commit)
+{
+    const uint8_t requests[][9] = {
+        {0, 4, 0, 2, 4, 2, 88, 0, 1},
+        {0, 3, 0, 2, 4, 0, 1, 2, 88},
+        {255, 255, 0, 2, 4, 0, 1, 2, 88},
+    };
+    uint8_t response[16];
+    size_t length;
+    for (size_t i = 0; i < ARRAY_SIZE(requests); i++) {
+        zassert_equal(controller_modbus_fc16(requests[i], sizeof(requests[i]), response, sizeof(response), &length), 2);
+        zassert_equal(length, 0);
+        uint16_t value;
+        zassert_ok(controller_modbus_register_read(4, &value));
+        zassert_equal(value, 500);
+    }
+    const uint8_t invalid_value[] = {0, 4, 0, 1, 2, 3, 233};
+    zassert_equal(controller_modbus_fc16(invalid_value, sizeof(invalid_value), response, sizeof(response), &length), 2);
+    const uint8_t valid[] = {0, 4, 0, 1, 2, 2, 138};
+    zassert_ok(controller_modbus_fc16(valid, sizeof(valid), response, sizeof(response), &length));
+    zassert_equal(length, 4);
+    zassert_mem_equal(response, valid, 4);
+    uint16_t value;
+    zassert_ok(controller_modbus_register_read(4, &value));
+    zassert_equal(value, 650);
+    // Неверная длина и недостаточный буфер ответа не должны менять уставку.
+    zassert_equal(controller_modbus_fc16(valid, sizeof(valid) - 1, response, sizeof(response), &length), 3);
+    zassert_equal(controller_modbus_fc16(valid, sizeof(valid), response, 3, &length), 4);
+    zassert_ok(controller_modbus_register_read(4, &value));
+    zassert_equal(value, 650);
+}
+
+ZTEST(modbus_map, test_fc03_encodes_one_snapshot_and_validates_range)
+{
+    const uint8_t request[] = {0, 0, 0, 5};
+    const uint8_t expected[] = {10, 0, 1, 0, 0, 0, 0, 1, 244, 1, 244};
+    uint8_t response[16];
+    size_t length;
+    zassert_ok(controller_modbus_fc03(request, sizeof(request), response, sizeof(response), &length));
+    zassert_equal(length, sizeof(expected));
+    zassert_mem_equal(response, expected, sizeof(expected));
+    const uint8_t invalid[] = {0, 4, 0, 2};
+    zassert_equal(controller_modbus_fc03(invalid, sizeof(invalid), response, sizeof(response), &length), 2);
+    zassert_equal(length, 0);
+    zassert_equal(controller_modbus_fc03(request, 3, response, sizeof(response), &length), 3);
+    zassert_equal(controller_modbus_fc03(request, sizeof(request), response, 10, &length), 4);
+}
+
+K_THREAD_STACK_DEFINE(snapshot_stack, 2048);
+static struct k_thread snapshot_thread;
+static bool snapshot_worker_ok;
+
+static void snapshot_worker(void *a, void *b, void *c)
+{
+    ARG_UNUSED(a); ARG_UNUSED(b); ARG_UNUSED(c);
+    for (int i = 0; i < 80; i++) {
+        if (controller_app_inject(true)) snapshot_worker_ok = false;
+        controller_app_tick();
+        k_sleep(K_MSEC(1));
+        if (controller_app_inject(false)) snapshot_worker_ok = false;
+        controller_app_tick();
+        if (controller_app_reset() || controller_app_start()) snapshot_worker_ok = false;
+        k_sleep(K_MSEC(1));
+    }
+}
+
+ZTEST(modbus_map, test_fc03_stays_consistent_during_fault_transitions)
+{
+    zassert_ok(controller_app_start());
+    snapshot_worker_ok = true;
+    int previous_priority = k_thread_priority_get(k_current_get());
+    // Писатель может вытеснить читателя даже между регистрами ответа.
+    k_thread_priority_set(k_current_get(), 6);
+    k_thread_create(&snapshot_thread, snapshot_stack, K_THREAD_STACK_SIZEOF(snapshot_stack),
+                    snapshot_worker, NULL, NULL, NULL, 5, 0, K_NO_WAIT);
+    bool consistent = true;
+    const uint8_t request[] = {0, 0, 0, 5};
+    for (int i = 0; i < 200; i++) {
+        uint8_t response[11];
+        size_t length;
+        if (controller_modbus_fc03(request, sizeof(request), response, sizeof(response), &length)) {
+            consistent = false;
+        } else {
+            uint16_t state = sys_get_be16(response + 1);
+            uint16_t faults = sys_get_be16(response + 3);
+            int16_t measured = sys_get_be16(response + 7);
+            if (state == STATE_RUNNING && (faults || measured <= 0)) consistent = false;
+            if (faults == FAULT_WIRE_BREAK && (state != STATE_FAULT || measured != 0)) consistent = false;
+        }
+        k_sleep(K_MSEC(1));
+    }
+    int joined = k_thread_join(&snapshot_thread, K_SECONDS(2));
+    if (joined) k_thread_abort(&snapshot_thread);
+    k_thread_priority_set(k_current_get(), previous_priority);
+    zassert_ok(joined);
+    zassert_true(snapshot_worker_ok);
+    zassert_true(consistent, "FC03 combined fields from different controller states");
 }
 
 ZTEST_SUITE(modbus_map, NULL, NULL, before, NULL, NULL);
