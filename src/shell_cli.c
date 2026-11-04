@@ -95,8 +95,13 @@ static int cmd_status(const struct shell *sh, size_t argc, char **argv)
     shell_print(sh, "active=0x%x latched=0x%x current_ua=%d voltage_mv=%d",
                 status.active_faults, status.latched_faults,
                 status.sample.current_ua, status.sample.voltage_mv);
-    shell_print(sh, "sensor_faults=0x%x process_faults=0x%x",
-                status.sensor_faults, status.process_faults);
+    char names[96];
+    format_flags(names, sizeof(names), status.sensor_faults, fault_names, ARRAY_SIZE(fault_names));
+    shell_print(sh, "sensor_faults=0x%x sensor_fault_names=%s", status.sensor_faults, names);
+    format_flags(names, sizeof(names), status.process_faults, fault_names, ARRAY_SIZE(fault_names));
+    shell_print(sh, "process_faults=0x%x process_fault_names=%s", status.process_faults, names);
+    format_flags(names, sizeof(names), status.latched_faults, fault_names, ARRAY_SIZE(fault_names));
+    shell_print(sh, "latched_names=%s", names);
     shell_print(sh, "read_error=%d warnings=0x%x", status.sample.read_error, status.active_warnings);
     shell_print(sh, "frequency_x100=%d output_x100=%d",
                 status.frequency_x100, status.output_x100);
@@ -116,11 +121,8 @@ static int cmd_status(const struct shell *sh, size_t argc, char **argv)
     shell_print(sh, "pid_bias_x100=%d pid_kp=%d pid_ki=%d pid_divisor=%d",
                 status.config.pid.bias_x100, status.config.pid.kp,
                 status.config.pid.ki, status.config.pid.divisor);
-    char names[96];
     format_flags(names, sizeof(names), status.active_faults, fault_names, ARRAY_SIZE(fault_names));
     shell_print(sh, "active_names=%s", names);
-    format_flags(names, sizeof(names), status.latched_faults, fault_names, ARRAY_SIZE(fault_names));
-    shell_print(sh, "latched_names=%s", names);
     format_flags(names, sizeof(names), status.active_warnings, warning_names, ARRAY_SIZE(warning_names));
     shell_print(sh, "warning_names=%s", names);
     return 0;
@@ -326,3 +328,16 @@ static int cmd_modbus_status(const struct shell *sh, size_t argc, char **argv)
 }
 SHELL_CMD_ARG_REGISTER(modbus_status, NULL, "Карта Holding Registers Modbus",
                        cmd_modbus_status, 1, 0);
+
+static int cmd_faults_clear_history(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+    controller_app_events_clear();
+    return command_result(sh, 0);
+}
+
+SHELL_STATIC_SUBCMD_SET_CREATE(fault_commands,
+    SHELL_CMD_ARG(clear_history, NULL, "Очистить журнал событий", cmd_faults_clear_history, 1, 0),
+    SHELL_SUBCMD_SET_END);
+SHELL_CMD_REGISTER(faults, &fault_commands, "Журнал аварий и событий", NULL);

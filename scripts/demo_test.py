@@ -36,17 +36,22 @@ class Console:
     def read_prompt(self, command=None):
         output = b""
         deadline = time.monotonic() + 10
+        candidate = None
         while time.monotonic() < deadline:
-            if self.selector.select(0.1):
+            if self.selector.select(0.03 if candidate is not None else 0.1):
                 chunk = os.read(self.process.stdout.fileno(), 65536)
                 if not chunk:
                     raise RuntimeError("QEMU завершился до ответа консоли")
                 output += chunk
+                candidate = None
                 text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", output.decode(errors="replace"))
                 echo = text.find(command) if command else 0
-                if echo >= 0 and text.rfind("uart:~$ ") > echo:
-                    self.transcript.append(text)
-                    return text
+                if echo >= 0 and text.endswith("uart:~$ ") and text.rfind("uart:~$ ") > echo:
+                    # Лог может перерисовать приглашение посреди ответа команды.
+                    candidate = text
+            elif candidate is not None:
+                self.transcript.append(candidate)
+                return candidate
         raise TimeoutError("Нет приглашения Shell: " + output.decode(errors="replace"))
 
     def command(self, text):
@@ -58,8 +63,19 @@ class Console:
         deadline = time.monotonic() + 2
         while time.monotonic() < deadline:
             output = self.command("status")
-            if f"state={state}" in output and (active is None or f"active=0x{active:x}" in output):
-                return output
+            # Берём последний снимок status, исключая строки асинхронного лога.
+            blocks = re.split(r"(?m)(?=^state=)", output)
+            lines = [line for line in blocks[-1].splitlines()
+                     if re.match(r"^\w+=", line)]
+            snapshot = "\n".join(lines)
+            fields = dict(re.findall(r"(\w+)=([^\s]+)", snapshot))
+            complete = {"state", "active", "active_names", "warning_names"} <= fields.keys()
+            try:
+                mask_matches = active is None or int(fields.get("active", ""), 0) == active
+            except ValueError:
+                mask_matches = False
+            if complete and fields["state"] == state and mask_matches:
+                return snapshot
             time.sleep(0.02)
         raise AssertionError(f"Не дождались состояния {state}: {output}")
 
@@ -88,6 +104,7 @@ def main():
     try:
         assert "Команда отклонена" in console.command("crash_test")
         initial = console.status("READY", active=0)
+        assert "sensor_fault_names=none" in initial and "process_fault_names=none" in initial
         assert "active_names=none" in initial and "latched_names=none" in initial
         assert "signal_injected=no" in initial and "wire_break_injected=no" in initial
         assert "OK" in console.command("start")
@@ -198,6 +215,14 @@ def main():
         combined = console.status("FAULT", active=9)
         assert "active_names=WIRE_BREAK,PROCESS_HIGH" in combined
         assert "latched_names=WIRE_BREAK,PROCESS_HIGH" in combined
+        assert "sensor_fault_names=WIRE_BREAK" in combined
+        assert "process_fault_names=PROCESS_HIGH" in combined
+        assert "OK" in console.command("faults clear_history")
+        assert "event=" not in console.command("events")
+        unchanged = console.status("FAULT", active=9)
+        assert "latched_names=WIRE_BREAK,PROCESS_HIGH" in unchanged
+        assert "Команда отклонена" in console.command("reset")
+        assert "OK" in console.command("faults clear_history")
         assert "OK" in console.command("inject signal off")
         assert "OK" in console.command("inject wire-break off")
         assert "OK" in console.command("reset")

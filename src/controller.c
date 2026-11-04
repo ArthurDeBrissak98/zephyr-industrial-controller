@@ -406,3 +406,13 @@ int controller_parameters_apply(struct controller *ctrl,
     k_mutex_unlock(&ctrl->mutex);
     return ret;
 }
+
+void controller_events_clear(struct controller *ctrl)
+{
+    k_mutex_lock(&ctrl->mutex, K_FOREVER);
+    memset(ctrl->events, 0, sizeof(ctrl->events));
+    ctrl->event_head = 0;
+    ctrl->event_count = 0;
+    // Нумерацию продолжаем, чтобы новые записи не путались со старой выгрузкой.
+    k_mutex_unlock(&ctrl->mutex);
+}

@@ -1,0 +1,32 @@
+version: 1
+scenarios:
+  - name: modbus_read_state
+    steps:
+      - status:
+          state: READY
+          profile: pump
+          mode: 4-20ma
+          active: 0
+          warnings: 0
+          measured_x10: 500
+          output_x100: 0
+      # FC03: 01 03 00 00 00 05 85 C9 — состояние, аварии, предупреждения,
+      # измеренное значение и уставка. Запрос идёт по UART1, Shell — по UART0.
+      - modbus_read:
+          address: 0
+          count: 5
+          expect: [1, 0, 0, 500, 500]
+      - command: inject wire-break on
+        expect: [OK]
+      - status:
+          state: FAULT
+          active: 1
+          sensor_faults: 1
+          process_faults: 0
+          latched: 1
+          output_x100: 0
+      # WIRE_BREAK = 0x01; недостоверное измерение сбрасывается в 0.
+      - modbus_read:
+          address: 0
+          count: 5
+          expect: [3, 1, 0, 0, 500]
