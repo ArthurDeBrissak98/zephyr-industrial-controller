@@ -72,14 +72,63 @@ static void update_protections(struct controller *ctrl, int64_t now_ms)
 void controller_init(struct controller *ctrl)
 {
     memset(ctrl, 0, sizeof(*ctrl));
-    ctrl->config = (struct controller_config) { PROFILE_PUMP, INPUT_4_20MA };
+    k_mutex_init(&ctrl->mutex);
+    ctrl->last_update_ms = -1;
+    ctrl->config = (struct controller_config) {
+        .profile = PROFILE_PUMP,
+        .mode = INPUT_4_20MA,
+        .pid = { .bias_x100 = 2500, .kp = 50, .ki = 5, .divisor = 10 },
+    };
     ctrl->state = STATE_STOPPED;
     protection_defaults(ctrl);
 }
 
-void controller_update(struct controller *ctrl, const struct sensor_sample *sample,
+static int64_t pi_target(const struct pid_config *config, int64_t error, int64_t integral)
+{
+    return config->bias_x100 +
+        ((int64_t)config->kp * error + (int64_t)config->ki * integral / CONTROLLER_PERIOD_MS) /
+        config->divisor;
+}
+
+static void update_pi(struct controller *ctrl, int64_t dt_ms)
+{
+    const struct pid_config *config = &ctrl->config.pid;
+    int64_t error = (int64_t)ctrl->sample.setpoint_x10 - ctrl->sample.measured_x10;
+    int64_t candidate = ctrl->integral;
+
+    // Проверяем запас до насыщения раньше, чем умножаем ошибку на время.
+    if (dt_ms > 0 && error > 0) {
+        int64_t room = CONTROLLER_INTEGRAL_LIMIT - candidate;
+        candidate = dt_ms > room / error ? CONTROLLER_INTEGRAL_LIMIT : candidate + error * dt_ms;
+    } else if (dt_ms > 0 && error < 0) {
+        int64_t room = candidate + CONTROLLER_INTEGRAL_LIMIT;
+        candidate = dt_ms > room / -error ? -CONTROLLER_INTEGRAL_LIMIT : candidate + error * dt_ms;
+    }
+
+    int64_t target = pi_target(config, error, candidate);
+    bool pushes_saturation = (target >= 5000 && error > 0) || (target <= 0 && error < 0);
+    if (!pushes_saturation) ctrl->integral = candidate;
+    // При обратном знаке ошибки интегратор может выйти из насыщения.
+    if (target > 5000) target = 5000;
+    if (target < 0) target = 0;
+    int difference = (int)target - ctrl->frequency_x100;
+    if (difference > 100) difference = 100;
+    if (difference < -100) difference = -100;
+    ctrl->frequency_x100 += difference;
+}
+
+static void controller_update_locked(struct controller *ctrl, const struct sensor_sample *sample,
                        int64_t now_ms)
 {
+    int64_t dt_ms = 0;
+    if (now_ms > ctrl->last_update_ms) {
+        // Разность крайних int64_t тоже может не поместиться в int64_t.
+        if (ctrl->last_update_ms < 0 && now_ms > INT64_MAX + ctrl->last_update_ms) {
+            dt_ms = INT64_MAX;
+        } else {
+            dt_ms = now_ms - ctrl->last_update_ms;
+        }
+    }
     uint32_t previous_faults = ctrl->active_faults;
 
     struct signal_value signal = sensor_signal_process(&ctrl->signal_filter,
@@ -113,33 +162,22 @@ void controller_update(struct controller *ctrl, const struct sensor_sample *samp
         return;
     }
 
-    int64_t error = (int64_t)ctrl->sample.setpoint_x10 - ctrl->sample.measured_x10;
-    int64_t integral = ctrl->integral + error;
-    if (integral > 100000) integral = 100000;
-    if (integral < -100000) integral = -100000;
-    ctrl->integral = (int)integral;
-
-    int64_t target = 2500 + (50 * error + 5 * integral) / 10;
-    if (target > 5000) target = 5000;
-    if (target < 0) target = 0;
-    int difference = (int)target - ctrl->frequency_x100;
-    if (difference > 100) difference = 100;
-    if (difference < -100) difference = -100;
-    ctrl->frequency_x100 += difference;
+    update_pi(ctrl, dt_ms);
 }
 
-int controller_start(struct controller *ctrl, int64_t now_ms)
+static int controller_start_locked(struct controller *ctrl, int64_t now_ms)
 {
     if (ctrl->state != STATE_READY || !ctrl->sample_valid || ctrl->latched_faults) {
         return -EACCES;
     }
     ctrl->state = STATE_RUNNING;
     ctrl->integral = 0;
+    ctrl->last_update_ms = now_ms;
     record_event(ctrl, EVENT_START, FAULT_NONE, ctrl->active_warnings, now_ms);
     return 0;
 }
 
-void controller_stop(struct controller *ctrl, int64_t now_ms)
+static void controller_stop_locked(struct controller *ctrl, int64_t now_ms)
 {
     ctrl->frequency_x100 = 0;
     ctrl->integral = 0;
@@ -150,7 +188,7 @@ void controller_stop(struct controller *ctrl, int64_t now_ms)
     }
 }
 
-int controller_reset(struct controller *ctrl, int64_t now_ms)
+static int controller_reset_locked(struct controller *ctrl, int64_t now_ms)
 {
     if (ctrl->state != STATE_FAULT) return -EALREADY;
     if (!ctrl->sample_valid || ctrl->active_faults) return -EBUSY;
@@ -162,11 +200,13 @@ int controller_reset(struct controller *ctrl, int64_t now_ms)
     return 0;
 }
 
-int controller_configure(struct controller *ctrl, struct controller_config config,
+static int controller_configure_locked(struct controller *ctrl, struct controller_config config,
                          int64_t now_ms)
 {
     if ((config.profile != PROFILE_PUMP && config.profile != PROFILE_AHU) ||
         (config.mode != INPUT_4_20MA && config.mode != INPUT_0_10V)) return -EINVAL;
+    if (config.pid.bias_x100 < 0 || config.pid.bias_x100 > 5000 ||
+        config.pid.kp < 0 || config.pid.ki < 0 || config.pid.divisor <= 0) return -EINVAL;
     if (ctrl->state == STATE_RUNNING || ctrl->state == STATE_FAULT) return -EBUSY;
     if (ctrl->active_warnings) {
         record_event(ctrl, EVENT_WARNING_CLEARED, 0, ctrl->active_warnings, now_ms);
@@ -185,7 +225,7 @@ int controller_configure(struct controller *ctrl, struct controller_config confi
     return 0;
 }
 
-int controller_protection_configure(struct controller *ctrl, enum protection_id id,
+static int controller_protection_configure_locked(struct controller *ctrl, enum protection_id id,
                                     struct protection_config config, int64_t now_ms)
 {
     if (id < 0 || id >= PROTECTION_COUNT) return -EINVAL;
@@ -198,13 +238,23 @@ int controller_protection_configure(struct controller *ctrl, enum protection_id 
     if (config.threshold_x10 < minimum || config.threshold_x10 > maximum ||
         config.hysteresis_x10 < 0 || clear_limit < minimum || clear_limit > maximum ||
         config.delay_ms < 0 || config.delay_ms > 60000) return -EINVAL;
+    enum protection_id opposite;
+    switch (id) {
+    case PROTECTION_LOW_TRIP: opposite = PROTECTION_HIGH_TRIP; break;
+    case PROTECTION_HIGH_TRIP: opposite = PROTECTION_LOW_TRIP; break;
+    case PROTECTION_LOW_WARNING: opposite = PROTECTION_HIGH_WARNING; break;
+    default: opposite = PROTECTION_LOW_WARNING; break;
+    }
+    int other_threshold = ctrl->protections[opposite].threshold_x10;
+    if ((low && config.threshold_x10 >= other_threshold) ||
+        (!low && config.threshold_x10 <= other_threshold)) return -EINVAL;
     ctrl->protections[id] = config;
     memset(&ctrl->protection_states[id], 0, sizeof(ctrl->protection_states[id]));
     record_event(ctrl, EVENT_PROTECTION_CHANGED, 0, ctrl->active_warnings, now_ms);
     return 0;
 }
 
-bool controller_event_get(const struct controller *ctrl, size_t index,
+static bool controller_event_get_locked(const struct controller *ctrl, size_t index,
                           struct controller_event *event)
 {
     if (index >= ctrl->event_count) return false;
@@ -239,4 +289,59 @@ const char *controller_event_name(enum event_type type)
     case EVENT_INPUT_CHANGED: return "INPUT_CHANGED";
     default: return "UNKNOWN";
     }
+}
+
+void controller_update(struct controller *ctrl, const struct sensor_sample *sample, int64_t now_ms)
+{
+    k_mutex_lock(&ctrl->mutex, K_FOREVER);
+    controller_update_locked(ctrl, sample, now_ms);
+    ctrl->last_update_ms = now_ms;
+    k_mutex_unlock(&ctrl->mutex);
+}
+
+int controller_start(struct controller *ctrl, int64_t now_ms)
+{
+    k_mutex_lock(&ctrl->mutex, K_FOREVER);
+    int ret = controller_start_locked(ctrl, now_ms);
+    k_mutex_unlock(&ctrl->mutex);
+    return ret;
+}
+
+void controller_stop(struct controller *ctrl, int64_t now_ms)
+{
+    k_mutex_lock(&ctrl->mutex, K_FOREVER);
+    controller_stop_locked(ctrl, now_ms);
+    k_mutex_unlock(&ctrl->mutex);
+}
+
+int controller_reset(struct controller *ctrl, int64_t now_ms)
+{
+    k_mutex_lock(&ctrl->mutex, K_FOREVER);
+    int ret = controller_reset_locked(ctrl, now_ms);
+    k_mutex_unlock(&ctrl->mutex);
+    return ret;
+}
+
+int controller_configure(struct controller *ctrl, struct controller_config config, int64_t now_ms)
+{
+    k_mutex_lock(&ctrl->mutex, K_FOREVER);
+    int ret = controller_configure_locked(ctrl, config, now_ms);
+    k_mutex_unlock(&ctrl->mutex);
+    return ret;
+}
+
+int controller_protection_configure(struct controller *ctrl, enum protection_id id, struct protection_config config, int64_t now_ms)
+{
+    k_mutex_lock(&ctrl->mutex, K_FOREVER);
+    int ret = controller_protection_configure_locked(ctrl, id, config, now_ms);
+    k_mutex_unlock(&ctrl->mutex);
+    return ret;
+}
+
+bool controller_event_get(struct controller *ctrl, size_t index, struct controller_event *event)
+{
+    k_mutex_lock(&ctrl->mutex, K_FOREVER);
+    bool found = controller_event_get_locked(ctrl, index, event);
+    k_mutex_unlock(&ctrl->mutex);
+    return found;
 }

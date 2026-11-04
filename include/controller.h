@@ -4,20 +4,30 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <zephyr/kernel.h>
 
 #include "sensor_signal.h"
 #include "protection.h"
 #define CONTROLLER_PERIOD_MS 100
 #define EVENT_CAPACITY 32
+#define CONTROLLER_INTEGRAL_LIMIT (100000LL * CONTROLLER_PERIOD_MS)
 
 enum controller_state { STATE_STOPPED, STATE_READY, STATE_RUNNING, STATE_FAULT };
 enum event_type { EVENT_READY, EVENT_START, EVENT_STOP, EVENT_FAULT,
                   EVENT_FAULT_CLEARED, EVENT_RESET, EVENT_INPUT_CHANGED,
                   EVENT_WARNING, EVENT_WARNING_CLEARED, EVENT_PROTECTION_CHANGED };
 
+struct pid_config {
+    int bias_x100;
+    int kp;
+    int ki;
+    int divisor;
+};
+
 struct controller_config {
     enum controller_profile profile;
     enum input_mode mode;
+    struct pid_config pid;
 };
 
 struct sensor_sample {
@@ -45,6 +55,7 @@ struct controller_event {
 };
 
 struct controller {
+    struct k_mutex mutex;
     struct controller_config config;
     enum controller_state state;
     struct sensor_sample sample;
@@ -56,7 +67,8 @@ struct controller {
     uint32_t active_faults;
     uint32_t latched_faults;
     int frequency_x100;
-    int integral;
+    int64_t integral;
+    int64_t last_update_ms;
     struct controller_event events[EVENT_CAPACITY];
     size_t event_head;
     size_t event_count;
@@ -73,7 +85,7 @@ int controller_configure(struct controller *ctrl, struct controller_config confi
                          int64_t now_ms);
 int controller_protection_configure(struct controller *ctrl, enum protection_id id,
                                     struct protection_config config, int64_t now_ms);
-bool controller_event_get(const struct controller *ctrl, size_t index,
+bool controller_event_get(struct controller *ctrl, size_t index,
                           struct controller_event *event);
 const char *controller_state_name(enum controller_state state);
 const char *controller_event_name(enum event_type type);
