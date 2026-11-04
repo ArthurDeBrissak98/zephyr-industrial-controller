@@ -306,4 +306,22 @@ ZTEST(controller_logic, test_profile_change_restores_protection_defaults)
     zassert_equal(ctrl.protections[PROTECTION_LOW_WARNING].delay_ms, 500);
 }
 
+ZTEST(controller_logic, test_journal_keeps_input_context_after_configuration_change)
+{
+    struct sensor_sample broken = healthy;
+    broken.current_ua = 2000;
+    controller_update(&ctrl, &broken, 0);
+    controller_update(&ctrl, &healthy, 100);
+    zassert_ok(controller_reset(&ctrl, 101));
+    struct controller_config config = { PROFILE_AHU, INPUT_0_10V };
+    zassert_ok(controller_configure(&ctrl, config, 102));
+    struct controller_event event;
+    zassert_true(controller_event_get(&ctrl, 0, &event));
+    zassert_equal(event.type, EVENT_FAULT);
+    zassert_equal(event.profile, PROFILE_PUMP);
+    zassert_equal(event.mode, INPUT_4_20MA);
+    zassert_false(event.signal_valid);
+    zassert_equal(event.current_ua, 2000);
+}
+
 ZTEST_SUITE(controller_logic, NULL, NULL, before, NULL, NULL);

@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <stdio.h>
 
 static int command_result(const struct shell *sh, int ret)
 {
@@ -39,6 +40,39 @@ static int cmd_reset(const struct shell *sh, size_t argc, char **argv)
     return command_result(sh, controller_app_reset());
 }
 
+struct named_flag {
+    uint32_t mask;
+    const char *name;
+};
+
+static const struct named_flag fault_names[] = {
+    {FAULT_WIRE_BREAK, "WIRE_BREAK"},
+    {FAULT_INPUT_RANGE, "INPUT_RANGE"},
+    {FAULT_PROCESS_LOW, "PROCESS_LOW"},
+    {FAULT_PROCESS_HIGH, "PROCESS_HIGH"},
+};
+static const struct named_flag warning_names[] = {
+    {WARNING_LOW, "LOW"},
+    {WARNING_HIGH, "HIGH"},
+};
+
+static void format_flags(char *buffer, size_t capacity, uint32_t mask,
+                         const struct named_flag *names, size_t count)
+{
+    size_t used = 0;
+    buffer[0] = '\0';
+    for (size_t i = 0; i < count; i++) {
+        if (!(mask & names[i].mask)) continue;
+        int length = snprintf(buffer + used, capacity - used, "%s%s",
+                              used ? "," : "", names[i].name);
+        if (length < 0 || (size_t)length >= capacity - used) return;
+        used += (size_t)length;
+        mask &= ~names[i].mask;
+    }
+    if (mask) snprintf(buffer + used, capacity - used, "%s0x%x", used ? "," : "", mask);
+    else if (!used) snprintf(buffer, capacity, "none");
+}
+
 static int cmd_status(const struct shell *sh, size_t argc, char **argv)
 {
     struct controller_status status;
@@ -56,18 +90,38 @@ static int cmd_status(const struct shell *sh, size_t argc, char **argv)
     shell_print(sh, "scaled_x10=%d measured_x10=%d signal_valid=%s",
                 status.sample.scaled_x10, status.sample.measured_x10,
                 status.signal_valid ? "yes" : "no");
+    shell_print(sh, "filter_samples=%u/%d measurement_unit=%s",
+                status.filter_count, SIGNAL_FILTER_SIZE,
+                status.config.profile == PROFILE_PUMP ? "percent_x10" : "celsius_x10");
+    shell_print(sh, "signal_injected=%s injected_value=%d injected_unit=%s wire_break_injected=%s",
+                status.signal_injected ? "yes" : "no", status.injected_value,
+                status.config.mode == INPUT_4_20MA ? "uA" : "mV",
+                status.wire_break_injected ? "yes" : "no");
+    char names[96];
+    format_flags(names, sizeof(names), status.active_faults, fault_names, ARRAY_SIZE(fault_names));
+    shell_print(sh, "active_names=%s", names);
+    format_flags(names, sizeof(names), status.latched_faults, fault_names, ARRAY_SIZE(fault_names));
+    shell_print(sh, "latched_names=%s", names);
+    format_flags(names, sizeof(names), status.active_warnings, warning_names, ARRAY_SIZE(warning_names));
+    shell_print(sh, "warning_names=%s", names);
     return 0;
 }
 
 static int cmd_inject(const struct shell *sh, size_t argc, char **argv)
 {
     if (!strcmp(argv[1], "signal")) {
-        if (!strcmp(argv[2], "off")) {
-            return command_result(sh, controller_app_inject_signal(false, 0));
+        bool enabled = strcmp(argv[2], "off") != 0;
+        int value = 0;
+        if (enabled && !parse_integer(argv[2], &value)) return command_result(sh, -EINVAL);
+        int ret = controller_app_inject_signal(enabled, value);
+        if (!ret) {
+            struct controller_status status;
+            controller_app_status(&status);
+            if (enabled) shell_print(sh, "signal override=%d unit=%s; applies on next sample",
+                                     value, status.config.mode == INPUT_4_20MA ? "uA" : "mV");
+            else shell_print(sh, "signal source=model");
         }
-        int value;
-        if (!parse_integer(argv[2], &value)) return command_result(sh, -EINVAL);
-        return command_result(sh, controller_app_inject_signal(true, value));
+        return command_result(sh, ret);
     }
     if (strcmp(argv[1], "wire-break")) return command_result(sh, -EINVAL);
     bool enabled;
@@ -107,6 +161,13 @@ static int cmd_events(const struct shell *sh, size_t argc, char **argv)
                     e->sequence, (long long)e->timestamp_ms, controller_event_name(e->type),
                     controller_state_name(e->state), e->faults, e->current_ua, e->frequency_x100,
                     e->voltage_mv, e->measured_x10, e->warnings);
+        char faults[96], warnings[32];
+        format_flags(faults, sizeof(faults), e->faults, fault_names, ARRAY_SIZE(fault_names));
+        format_flags(warnings, sizeof(warnings), e->warnings, warning_names, ARRAY_SIZE(warning_names));
+        shell_print(sh, "#%u profile=%s mode=%s signal_valid=%s fault_names=%s warning_names=%s",
+                    e->sequence, e->profile == PROFILE_PUMP ? "pump" : "ahu",
+                    e->mode == INPUT_4_20MA ? "4-20ma" : "0-10v",
+                    e->signal_valid ? "yes" : "no", faults, warnings);
     }
     return 0;
 }

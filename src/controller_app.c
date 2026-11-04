@@ -7,11 +7,17 @@
 LOG_MODULE_REGISTER(controller_app, LOG_LEVEL_INF);
 K_MUTEX_DEFINE(controller_lock);
 static struct controller controller;
+static bool signal_injected;
+static bool wire_break_injected;
+static int injected_value;
 
 void controller_app_init(void)
 {
     k_mutex_lock(&controller_lock, K_FOREVER);
     controller_init(&controller);
+    signal_injected = false;
+    wire_break_injected = false;
+    injected_value = 0;
     controller_io_inject_wire_break(false);
     controller_io_inject_signal(false, 0);
     controller_io_write(0);
@@ -89,6 +95,7 @@ int controller_app_inject(bool enabled)
     k_mutex_lock(&controller_lock, K_FOREVER);
     int ret = enabled && controller.config.mode != INPUT_4_20MA ? -ENOTSUP :
               controller_io_inject_wire_break(enabled);
+    if (!ret) wire_break_injected = enabled;
     k_mutex_unlock(&controller_lock);
     return ret;
 }
@@ -106,6 +113,10 @@ void controller_app_status(struct controller_status *status)
         .frequency_x100 = controller.frequency_x100,
         .output_x100 = controller_io_output(),
         .signal_valid = controller.sample_valid,
+        .filter_count = controller.signal_filter.count,
+        .signal_injected = signal_injected,
+        .wire_break_injected = wire_break_injected,
+        .injected_value = injected_value,
     };
     for (int i = 0; i < PROTECTION_COUNT; i++) {
         status->protections[i] = controller.protections[i];
@@ -117,6 +128,10 @@ int controller_app_inject_signal(bool enabled, int value)
 {
     k_mutex_lock(&controller_lock, K_FOREVER);
     int ret = controller_io_inject_signal(enabled, value);
+    if (!ret) {
+        signal_injected = enabled;
+        injected_value = enabled ? value : 0;
+    }
     k_mutex_unlock(&controller_lock);
     return ret;
 }

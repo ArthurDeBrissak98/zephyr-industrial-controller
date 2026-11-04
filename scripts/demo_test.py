@@ -74,7 +74,9 @@ def main():
     args = parser.parse_args()
     console = Console(args.elf, args.qemu)
     try:
-        console.status("READY", active=0)
+        initial = console.status("READY", active=0)
+        assert "active_names=none" in initial and "latched_names=none" in initial
+        assert "signal_injected=no" in initial and "wire_break_injected=no" in initial
         assert "OK" in console.command("start")
         time.sleep(0.3)
         running = console.status("RUNNING")
@@ -82,6 +84,8 @@ def main():
         assert "OK" in console.command("inject wire-break on")
         fault = console.status("FAULT", active=1)
         assert "latched=0x1" in fault and "output_x100=0" in fault
+        assert "active_names=WIRE_BREAK" in fault and "latched_names=WIRE_BREAK" in fault
+        assert "wire_break_injected=yes" in fault
         assert "Команда отклонена" in console.command("reset")
         journal = console.command("events")
         assert re.search(r"t=\d+ms event=FAULT state=FAULT faults=0x1 current_ua=2000 frequency_x100=0", journal)
@@ -102,21 +106,28 @@ def main():
         assert "OK" in console.command("set mode 0-10v")
         console.status("READY")
         assert "Команда отклонена" in console.command("inject wire-break on")
-        assert "OK" in console.command("inject signal 5000")
+        injected = console.command("inject signal 5000")
+        assert "OK" in injected and "override=5000 unit=mV" in injected
         time.sleep(0.5)
         voltage = console.status("READY", active=0)
         assert "scaled_x10=100 measured_x10=100 signal_valid=yes" in voltage
+        assert "signal_injected=yes injected_value=5000 injected_unit=mV" in voltage
+        assert "filter_samples=4/4 measurement_unit=celsius_x10" in voltage
         assert "Команда отклонена" in console.command("inject signal 12oops")
         assert "Команда отклонена" in console.command("inject signal 99999999999999")
+        assert "injected_value=5000" in console.status("READY")
         assert "OK" in console.command("start")
         assert "OK" in console.command("inject signal 11000")
         fault = console.status("FAULT", active=2)
         assert "latched=0x2" in fault and "output_x100=0" in fault
         assert "signal_valid=no" in fault
+        assert "active_names=INPUT_RANGE" in fault
+        assert "filter_samples=0/4" in fault
         assert "Команда отклонена" in console.command("reset")
         journal = console.command("events")
         assert re.search(r"event=FAULT state=FAULT faults=0x2.*voltage_mv=11000", journal)
-        assert "OK" in console.command("inject signal off")
+        restored = console.command("inject signal off")
+        assert "OK" in restored and "signal source=model" in restored
         assert "OK" in console.command("reset")
         console.status("READY", active=0)
         assert "OK" in console.command("set profile pump")
@@ -136,11 +147,14 @@ def main():
         time.sleep(0.85)
         warning = console.status("RUNNING", active=0)
         assert "warnings=0x1" in warning
+        assert "active_names=none" in warning and "warning_names=LOW" in warning
         assert int(re.search(r"output_x100=(\d+)", warning)[1]) > 0
         journal = console.command("events")
         assert re.search(r"event=WARNING .*warnings=0x1", journal)
         fault = console.status("FAULT", active=4)
         assert "latched=0x4" in fault and "output_x100=0" in fault
+        assert "active_names=PROCESS_LOW" in fault
+        assert "signal_valid=yes" in fault
         assert "Команда отклонена" in console.command("reset")
         # 43% снимают аварию, но ещё не снимают предупреждение с границей 47%.
         assert "OK" in console.command("inject signal 10880")
@@ -154,6 +168,24 @@ def main():
         time.sleep(0.5)
         assert "warnings=0x0" in console.status("RUNNING", active=0)
         assert re.search(r"event=WARNING_CLEARED .*warnings=0x1", console.command("events"))
+        journal = console.command("events")
+        assert "profile=ahu mode=0-10v signal_valid=no fault_names=INPUT_RANGE" in journal
+        assert "profile=pump mode=4-20ma signal_valid=yes fault_names=PROCESS_LOW" in journal
+        assert "OK" in console.command("stop")
+        assert "OK" in console.command("protect set high-warning 550 20 0")
+        assert "OK" in console.command("protect set high-trip 600 50 0")
+        assert "OK" in console.command("inject signal 20000")
+        fault = console.status("FAULT", active=8)
+        assert "active_names=PROCESS_HIGH" in fault and "warning_names=HIGH" in fault
+        assert "OK" in console.command("inject wire-break on")
+        combined = console.status("FAULT", active=9)
+        assert "active_names=WIRE_BREAK,PROCESS_HIGH" in combined
+        assert "latched_names=WIRE_BREAK,PROCESS_HIGH" in combined
+        assert "OK" in console.command("inject signal off")
+        assert "OK" in console.command("inject wire-break off")
+        assert "OK" in console.command("reset")
+        console.status("READY", active=0)
+        print("PASS: единицы инъекции, расшифровка причин и снимок настроек в журнале")
         print("PASS: предупреждение без останова, задержка аварии, гистерезис и ручной сброс")
         print("PASS: пуск → обрыв → останов → журнал → устранение → сброс → отдельный пуск")
         print("PASS: масштабирование AHU, усреднение, ошибки команды и выход напряжения за диапазон")

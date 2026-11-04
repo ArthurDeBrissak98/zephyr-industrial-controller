@@ -9,6 +9,9 @@ static void record_event(struct controller *ctrl, enum event_type type,
 
     *event = (struct controller_event) {
         .sequence = ++ctrl->event_sequence,
+        .profile = ctrl->config.profile,
+        .mode = ctrl->config.mode,
+        .signal_valid = ctrl->sample_valid,
         .timestamp_ms = now_ms,
         .type = type,
         .state = ctrl->state,

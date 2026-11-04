@@ -14,6 +14,10 @@ struct controller_status {
     int frequency_x100;
     int output_x100;
     bool signal_valid;
+    unsigned int filter_count;
+    bool signal_injected;
+    bool wire_break_injected;
+    int injected_value;
 };
 
 void controller_app_init(void);

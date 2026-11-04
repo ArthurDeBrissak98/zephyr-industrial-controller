@@ -30,6 +30,9 @@ struct sensor_sample {
 
 struct controller_event {
     uint32_t sequence;
+    enum controller_profile profile;
+    enum input_mode mode;
+    bool signal_valid;
     int64_t timestamp_ms;
     enum event_type type;
     enum controller_state state;
