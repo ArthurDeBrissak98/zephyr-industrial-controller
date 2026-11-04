@@ -10,7 +10,7 @@ jobs:
       QEMU_BIN_PATH: /usr/bin
       ZEPHYR_BASE: ${{ github.workspace }}/../zephyr-workspace/zephyr
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Установить инструменты
         run: |
@@ -55,7 +55,7 @@ jobs:
 
       - name: Сохранить результаты
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: qemu-test-results
           path: |
