@@ -99,7 +99,7 @@ ZTEST(controller_logic, test_frequency_limits_and_ramp)
     }
     zassert_equal(ctrl.frequency_x100, 5000);
     zassert_equal(ctrl.integral, 100000);
-    sample.setpoint_x10 = 0;
+    sample.setpoint_x10 = -5000;
     sample.measured_x10 = 5000;
     for (int i = 0; i < 60; i++) {
         int previous = ctrl.frequency_x100;
@@ -165,6 +165,30 @@ ZTEST(controller_logic, test_journal_wrap_preserves_order)
         previous = next;
     }
     zassert_false(controller_event_get(&ctrl, EVENT_CAPACITY, &next));
+}
+
+ZTEST(controller_logic, test_regulator_uses_scaled_and_filtered_signal)
+{
+    struct sensor_sample sample = healthy;
+    sample.measured_x10 = -9999;
+    controller_update(&ctrl, &sample, 0);
+    zassert_equal(ctrl.sample.measured_x10, 500);
+    sample.current_ua = 20000;
+    controller_update(&ctrl, &sample, 100);
+    zassert_equal(ctrl.sample.scaled_x10, 1000);
+    zassert_equal(ctrl.sample.measured_x10, 750);
+}
+
+ZTEST(controller_logic, test_configuration_resets_filter)
+{
+    controller_update(&ctrl, &healthy, 0);
+    struct controller_config config = { PROFILE_AHU, INPUT_0_10V };
+    zassert_ok(controller_configure(&ctrl, config, 10));
+    zassert_false(ctrl.sample_valid);
+    struct sensor_sample sample = healthy;
+    sample.voltage_mv = 0;
+    controller_update(&ctrl, &sample, 100);
+    zassert_equal(ctrl.sample.measured_x10, -200);
 }
 
 ZTEST_SUITE(controller_logic, NULL, NULL, before, NULL, NULL);

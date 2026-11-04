@@ -1,6 +1,8 @@
 #include "controller_io.h"
 
 static bool wire_break;
+static bool signal_override;
+static int signal_value;
 static int output_frequency;
 
 void controller_io_read(const struct controller_config *config, struct sensor_sample *sample)
@@ -12,10 +14,13 @@ void controller_io_read(const struct controller_config *config, struct sensor_sa
 
     *sample = (struct sensor_sample) {
         .setpoint_x10 = config->profile == PROFILE_PUMP ? 500 : 200,
-        .measured_x10 = measured,
         .current_ua = config->mode == INPUT_4_20MA ? 4000 + percent_x10 * 16 : -1,
         .voltage_mv = config->mode == INPUT_0_10V ? percent_x10 * 10 : -1,
     };
+    if (signal_override) {
+        if (config->mode == INPUT_4_20MA) sample->current_ua = signal_value;
+        else sample->voltage_mv = signal_value;
+    }
     if (wire_break && config->mode == INPUT_4_20MA) {
         sample->current_ua = 2000;
     }
@@ -35,4 +40,11 @@ int controller_io_inject_wire_break(bool enabled)
 int controller_io_output(void)
 {
     return output_frequency;
+}
+
+int controller_io_inject_signal(bool enabled, int value)
+{
+    signal_override = enabled;
+    signal_value = value;
+    return 0;
 }

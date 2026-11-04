@@ -92,6 +92,26 @@ ZTEST(controller_scenario, test_wire_break_stop_journal_reset_restart)
     zassert_equal(controller_app_reset(), -EBUSY);
     zassert_ok(controller_app_inject(false));
     zassert_ok(controller_app_reset());
+
+    zassert_ok(controller_app_start());
+    zassert_ok(controller_app_inject_signal(true, 22000));
+    status = wait_for_state(STATE_FAULT);
+    zassert_equal(status.active_faults, FAULT_INPUT_RANGE);
+    zassert_equal(status.output_x100, 0);
+    zassert_false(status.signal_valid);
+    zassert_equal(controller_app_reset(), -EBUSY);
+    zassert_ok(controller_app_inject_signal(false, 0));
+    zassert_ok(controller_app_reset());
+
+    struct controller_config config = { PROFILE_PUMP, INPUT_0_10V };
+    zassert_ok(controller_app_configure(config));
+    zassert_ok(controller_app_inject_signal(true, -1));
+    zassert_equal(controller_app_start(), -EACCES);
+    controller_app_status(&status);
+    zassert_equal(status.active_faults, FAULT_INPUT_RANGE);
+    zassert_equal(status.output_x100, 0);
+    zassert_ok(controller_app_inject_signal(false, 0));
+    zassert_ok(controller_app_reset());
 }
 
 ZTEST_SUITE(controller_scenario, NULL, NULL, NULL, NULL, NULL);

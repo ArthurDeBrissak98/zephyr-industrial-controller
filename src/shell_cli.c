@@ -2,6 +2,8 @@
 #include <zephyr/shell/shell.h>
 #include <errno.h>
 #include <string.h>
+#include <stdlib.h>
+#include <limits.h>
 
 static int command_result(const struct shell *sh, int ret)
 {
@@ -39,11 +41,26 @@ static int cmd_status(const struct shell *sh, size_t argc, char **argv)
                 status.sample.current_ua, status.sample.voltage_mv);
     shell_print(sh, "frequency_x100=%d output_x100=%d",
                 status.frequency_x100, status.output_x100);
+    shell_print(sh, "scaled_x10=%d measured_x10=%d signal_valid=%s",
+                status.sample.scaled_x10, status.sample.measured_x10,
+                status.signal_valid ? "yes" : "no");
     return 0;
 }
 
 static int cmd_inject(const struct shell *sh, size_t argc, char **argv)
 {
+    if (!strcmp(argv[1], "signal")) {
+        if (!strcmp(argv[2], "off")) {
+            return command_result(sh, controller_app_inject_signal(false, 0));
+        }
+        char *end;
+        errno = 0;
+        long value = strtol(argv[2], &end, 10);
+        if (errno || end == argv[2] || *end || value < INT_MIN || value > INT_MAX) {
+            return command_result(sh, -EINVAL);
+        }
+        return command_result(sh, controller_app_inject_signal(true, (int)value));
+    }
     if (strcmp(argv[1], "wire-break")) return command_result(sh, -EINVAL);
     bool enabled;
     if (!strcmp(argv[2], "on")) enabled = true;
@@ -78,9 +95,10 @@ static int cmd_events(const struct shell *sh, size_t argc, char **argv)
     size_t count = controller_app_events(events, EVENT_CAPACITY);
     for (size_t i = 0; i < count; i++) {
         const struct controller_event *e = &events[i];
-        shell_print(sh, "#%u t=%lldms event=%s state=%s faults=0x%x current_ua=%d frequency_x100=%d",
+        shell_print(sh, "#%u t=%lldms event=%s state=%s faults=0x%x current_ua=%d frequency_x100=%d voltage_mv=%d measured_x10=%d",
                     e->sequence, (long long)e->timestamp_ms, controller_event_name(e->type),
-                    controller_state_name(e->state), e->faults, e->current_ua, e->frequency_x100);
+                    controller_state_name(e->state), e->faults, e->current_ua, e->frequency_x100,
+                    e->voltage_mv, e->measured_x10);
     }
     return 0;
 }
@@ -94,6 +112,6 @@ SHELL_CMD_ARG_REGISTER(start, NULL, "Пуск", cmd_start, 1, 0);
 SHELL_CMD_ARG_REGISTER(stop, NULL, "Останов", cmd_stop, 1, 0);
 SHELL_CMD_ARG_REGISTER(reset, NULL, "Сброс после устранения причины", cmd_reset, 1, 0);
 SHELL_CMD_ARG_REGISTER(status, NULL, "Состояние контроллера и выхода", cmd_status, 1, 0);
-SHELL_CMD_ARG_REGISTER(inject, NULL, "inject wire-break on|off", cmd_inject, 3, 0);
+SHELL_CMD_ARG_REGISTER(inject, NULL, "inject wire-break on|off; inject signal <value|off>", cmd_inject, 3, 0);
 SHELL_CMD_ARG_REGISTER(events, NULL, "Журнал событий", cmd_events, 1, 0);
 SHELL_CMD_REGISTER(set, &settings, "Настройки остановленного контроллера", NULL);

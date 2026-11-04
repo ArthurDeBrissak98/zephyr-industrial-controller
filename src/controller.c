@@ -14,6 +14,8 @@ static void record_event(struct controller *ctrl, enum event_type type,
         .state = ctrl->state,
         .faults = faults,
         .current_ua = ctrl->sample.current_ua,
+        .voltage_mv = ctrl->sample.voltage_mv,
+        .measured_x10 = ctrl->sample.measured_x10,
         .frequency_x100 = ctrl->frequency_x100,
     };
     ctrl->event_head = (ctrl->event_head + 1) % EVENT_CAPACITY;
@@ -34,12 +36,13 @@ void controller_update(struct controller *ctrl, const struct sensor_sample *samp
 {
     uint32_t previous_faults = ctrl->active_faults;
 
+    struct signal_value signal = sensor_signal_process(&ctrl->signal_filter,
+        ctrl->config.profile, ctrl->config.mode, sample->current_ua, sample->voltage_mv);
     ctrl->sample = *sample;
-    ctrl->sample_valid = true;
-    ctrl->active_faults = FAULT_NONE;
-    if (ctrl->config.mode == INPUT_4_20MA && sample->current_ua < 3600) {
-        ctrl->active_faults |= FAULT_WIRE_BREAK;
-    }
+    ctrl->sample.scaled_x10 = signal.scaled_x10;
+    ctrl->sample.measured_x10 = signal.filtered_x10;
+    ctrl->sample_valid = signal.faults == FAULT_NONE;
+    ctrl->active_faults = signal.faults;
 
     if (ctrl->active_faults != FAULT_NONE) {
         ctrl->latched_faults |= ctrl->active_faults;
@@ -63,7 +66,7 @@ void controller_update(struct controller *ctrl, const struct sensor_sample *samp
         return;
     }
 
-    int64_t error = (int64_t)sample->setpoint_x10 - sample->measured_x10;
+    int64_t error = (int64_t)ctrl->sample.setpoint_x10 - ctrl->sample.measured_x10;
     int64_t integral = ctrl->integral + error;
     if (integral > 100000) integral = 100000;
     if (integral < -100000) integral = -100000;
@@ -120,6 +123,7 @@ int controller_configure(struct controller *ctrl, struct controller_config confi
     if (ctrl->state == STATE_RUNNING || ctrl->state == STATE_FAULT) return -EBUSY;
     ctrl->config = config;
     ctrl->sample_valid = false;
+    sensor_signal_reset(&ctrl->signal_filter);
     ctrl->frequency_x100 = 0;
     ctrl->integral = 0;
     ctrl->state = STATE_STOPPED;

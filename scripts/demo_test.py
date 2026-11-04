@@ -102,7 +102,25 @@ def main():
         assert "OK" in console.command("set mode 0-10v")
         console.status("READY")
         assert "Команда отклонена" in console.command("inject wire-break on")
+        assert "OK" in console.command("inject signal 5000")
+        time.sleep(0.5)
+        voltage = console.status("READY", active=0)
+        assert "scaled_x10=100 measured_x10=100 signal_valid=yes" in voltage
+        assert "Команда отклонена" in console.command("inject signal 12oops")
+        assert "Команда отклонена" in console.command("inject signal 99999999999999")
+        assert "OK" in console.command("start")
+        assert "OK" in console.command("inject signal 11000")
+        fault = console.status("FAULT", active=2)
+        assert "latched=0x2" in fault and "output_x100=0" in fault
+        assert "signal_valid=no" in fault
+        assert "Команда отклонена" in console.command("reset")
+        journal = console.command("events")
+        assert re.search(r"event=FAULT state=FAULT faults=0x2.*voltage_mv=11000", journal)
+        assert "OK" in console.command("inject signal off")
+        assert "OK" in console.command("reset")
+        console.status("READY", active=0)
         print("PASS: пуск → обрыв → останов → журнал → устранение → сброс → отдельный пуск")
+        print("PASS: масштабирование AHU, усреднение, ошибки команды и выход напряжения за диапазон")
     finally:
         console.close()
         args.log.parent.mkdir(parents=True, exist_ok=True)

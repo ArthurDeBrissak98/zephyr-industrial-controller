@@ -13,6 +13,7 @@ void controller_app_init(void)
     k_mutex_lock(&controller_lock, K_FOREVER);
     controller_init(&controller);
     controller_io_inject_wire_break(false);
+    controller_io_inject_signal(false, 0);
     controller_io_write(0);
     k_mutex_unlock(&controller_lock);
 }
@@ -27,10 +28,11 @@ static void sample_locked(void)
     controller_io_write(controller.frequency_x100);
     if (controller.active_faults != previous_faults) {
         if (controller.active_faults) {
-            LOG_ERR("FAULT WIRE_BREAK: current_ua=%d output_x100=%d",
-                    sample.current_ua, controller_io_output());
+            LOG_ERR("FAULT %s: current_ua=%d voltage_mv=%d output_x100=%d",
+                    controller.active_faults & FAULT_WIRE_BREAK ? "WIRE_BREAK" : "INPUT_RANGE",
+                    sample.current_ua, sample.voltage_mv, controller_io_output());
         } else {
-            LOG_INF("WIRE_BREAK cleared; manual reset required");
+            LOG_INF("Input faults cleared; manual reset required");
         }
     }
 }
@@ -97,8 +99,17 @@ void controller_app_status(struct controller_status *status)
         .latched_faults = controller.latched_faults,
         .frequency_x100 = controller.frequency_x100,
         .output_x100 = controller_io_output(),
+        .signal_valid = controller.sample_valid,
     };
     k_mutex_unlock(&controller_lock);
+}
+
+int controller_app_inject_signal(bool enabled, int value)
+{
+    k_mutex_lock(&controller_lock, K_FOREVER);
+    int ret = controller_io_inject_signal(enabled, value);
+    k_mutex_unlock(&controller_lock);
+    return ret;
 }
 
 size_t controller_app_events(struct controller_event *events, size_t capacity)
