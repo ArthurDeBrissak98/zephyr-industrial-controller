@@ -11,14 +11,14 @@ import tempfile
 
 
 class Console:
-    def __init__(self, elf, qemu, storage_dir=None):
+    def __init__(self, elf, qemu, storage_dir=None, machine="lm3s6965evb"):
         self.storage = tempfile.TemporaryDirectory(prefix="controller-qemu-") if storage_dir is None else None
         workdir = self.storage.name if self.storage else str(storage_dir)
         elf = Path(elf).resolve()
         if os.path.dirname(qemu):
             qemu = str(Path(qemu).resolve())
         self.process = subprocess.Popen(
-            [qemu, "-machine", "lm3s6965evb", "-cpu", "cortex-m3",
+            [qemu, "-machine", machine, "-cpu", "cortex-m3",
              "-display", "none", "-monitor", "none", "-serial", "stdio",
              "-nic", "none", "-semihosting-config", "enable=on,target=native", "-kernel", str(elf)],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=workdir,
@@ -86,6 +86,7 @@ def main():
     args = parser.parse_args()
     console = Console(args.elf, args.qemu)
     try:
+        assert "Команда отклонена" in console.command("crash_test")
         initial = console.status("READY", active=0)
         assert "active_names=none" in initial and "latched_names=none" in initial
         assert "signal_injected=no" in initial and "wire_break_injected=no" in initial

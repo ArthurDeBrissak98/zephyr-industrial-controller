@@ -1,5 +1,6 @@
 # Zephyr build directories
 build/
+build-watchdog/
 zephyr/
 *.d
 

@@ -58,6 +58,12 @@ jobs:
       - name: Проверить отказ и повреждение flash
         run: python -m scripts.test_storage --elf build/zephyr/zephyr.elf
 
+      - name: Собрать аппаратный watchdog для MPS2
+        run: west build -b mps2/an385 -d build-watchdog . -o=-j4
+
+      - name: Проверить зависание потока и аппаратный сброс
+        run: python -m scripts.test_watchdog --elf build-watchdog/zephyr/zephyr.elf
+
       - name: Опубликовать отчёт тестов
         if: always()
         run: python scripts/ci_summary.py
@@ -74,3 +80,4 @@ jobs:
             build/demo-test.log
             build/scenarios.log
             build/storage-test.log
+            build-watchdog/watchdog-test.log
