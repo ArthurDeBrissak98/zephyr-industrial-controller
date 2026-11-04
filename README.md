@@ -16,17 +16,19 @@
 
 ## Подготовка
 
-Проверенная ревизия Zephyr: `6848730b4b3f4d6e9151a0a8873955878be1a18d`. Нужны Linux, Python 3.12+, CMake 3.28+, Ninja, DTC, ARM GNU Toolchain и QEMU ARM. Zephyr SDK для этого варианта не требуется.
+Проверенная ревизия Zephyr: `6848730b4b3f4d6e9151a0a8873955878be1a18d`. Нужны Linux, Python 3.12+, CMake 3.28+, Ninja, DTC, QEMU ARM и Zephyr SDK 1.0.1 с ARM GCC 14.3. Системного GCC 13 из Ubuntu 24.04 для этой ревизии Zephyr недостаточно.
 
 Пример для Ubuntu 24.04:
 
 ```bash
 sudo apt-get update
 sudo apt-get install -y --no-install-recommends git python3-venv python3-dev \
-  cmake ninja-build gperf device-tree-compiler make gcc-arm-none-eabi qemu-system-arm
+  cmake ninja-build gperf device-tree-compiler make curl xz-utils qemu-system-arm
 python3 -m venv ../zephyr-venv
 . ../zephyr-venv/bin/activate
 pip install west
+bash scripts/install_sdk.sh "$HOME/.local/zephyr-sdk"
+export ZEPHYR_SDK_INSTALL_DIR="$HOME/.local/zephyr-sdk/zephyr-sdk-1.0.1"
 git init ../zephyr-workspace/zephyr
 git -C ../zephyr-workspace/zephyr remote add origin https://github.com/zephyrproject-rtos/zephyr
 git -C ../zephyr-workspace/zephyr fetch --depth 1 origin 6848730b4b3f4d6e9151a0a8873955878be1a18d
@@ -38,12 +40,12 @@ pip install -r zephyr/scripts/requirements-base.txt \
   -r zephyr/scripts/requirements-build-test.txt \
   -r zephyr/scripts/requirements-run-test.txt
 export ZEPHYR_BASE="$PWD/zephyr"
-export ZEPHYR_TOOLCHAIN_VARIANT=gnuarmemb
-export GNUARMEMB_TOOLCHAIN_PATH=/usr
+export ZEPHYR_TOOLCHAIN_VARIANT=zephyr
+export QEMU_BIN_PATH=/usr/bin
 cd ../zephyr-industrial-controller
 ```
 
-В следующих терминалах снова активируйте venv и задайте три переменные выше с правильным путём к Zephyr.
+В следующих терминалах снова активируйте venv и задайте переменные выше с правильным путём к Zephyr.
 
 ## Сборка и запуск
 

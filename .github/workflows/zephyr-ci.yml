@@ -6,8 +6,9 @@ jobs:
   build-and-test:
     runs-on: ubuntu-24.04
     env:
-      ZEPHYR_TOOLCHAIN_VARIANT: gnuarmemb
-      GNUARMEMB_TOOLCHAIN_PATH: /usr
+      ZEPHYR_TOOLCHAIN_VARIANT: zephyr
+      ZEPHYR_SDK_INSTALL_DIR: ${{ runner.temp }}/zephyr-sdk-1.0.1
+      QEMU_BIN_PATH: /usr/bin
       ZEPHYR_BASE: ${{ github.workspace }}/../zephyr-workspace/zephyr
     steps:
       - uses: actions/checkout@v4
@@ -16,10 +17,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends git python3-venv python3-dev \
-            cmake ninja-build gperf device-tree-compiler make gcc-arm-none-eabi qemu-system-arm
+            cmake ninja-build gperf device-tree-compiler make curl xz-utils qemu-system-arm
           python3 -m venv "$RUNNER_TEMP/zephyr-venv"
           "$RUNNER_TEMP/zephyr-venv/bin/pip" install west
           echo "$RUNNER_TEMP/zephyr-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Установить ARM toolchain
+        run: bash scripts/install_sdk.sh "$RUNNER_TEMP"
 
       - name: Подготовить Zephyr
         working-directory: ${{ github.workspace }}/..
