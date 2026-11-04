@@ -100,7 +100,8 @@ def validate_step(step):
 
 
 def status_matches(output, expected):
-    fields = dict(re.findall(r"(\w+)=([^\s]+)", output))
+    status_lines = "\n".join(line for line in output.splitlines() if re.match(r"^\w+=", line))
+    fields = dict(re.findall(r"(\w+)=([^\s]+)", status_lines))
     for key, wanted in expected.items():
         actual = fields.get(key)
         if actual is None:

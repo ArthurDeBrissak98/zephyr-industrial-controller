@@ -48,6 +48,11 @@ class ScenarioValidationTests(unittest.TestCase):
             "state": "FAULT", "active": 2, "output_x100": 0}))
         self.assertFalse(status_matches("state=READY", {"output_x100": 0}))
 
+    def test_log_lines_do_not_override_status_fields(self):
+        output = "state=FAULT active=0x8\n[00:00:01] <err> controller_app: FAULT active=0x9\n"
+        self.assertFalse(status_matches(output, {"state": "FAULT", "active": 9}))
+        self.assertTrue(status_matches(output, {"state": "FAULT", "active": 8}))
+
     def test_crc_injection_changes_only_inner_crc_and_repairs_nvs_crc(self):
         blob = bytearray(b"1CIZ" + (1).to_bytes(4, "little") + bytes(88))
         blob += zlib.crc32(blob).to_bytes(4, "little")
