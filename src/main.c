@@ -1,4 +1,5 @@
 #include "controller_app.h"
+#include "controller_modbus.h"
 #include "controller_watchdog.h"
 #include <zephyr/drivers/watchdog.h>
 #include <zephyr/sys/atomic.h>
@@ -53,6 +54,10 @@ int main(void)
     if (ret && ret != -ENOENT && ret != -ENOTSUP) {
         LOG_ERR("Settings load failed: %d; using defaults", ret);
     }
+#ifdef CONFIG_APP_MODBUS
+    ret = controller_modbus_init();
+    if (ret) LOG_ERR("Modbus initialization failed: %d", ret);
+#endif
 #ifdef CONFIG_APP_WATCHDOG
     ret = watchdog_init();
     if (ret) {

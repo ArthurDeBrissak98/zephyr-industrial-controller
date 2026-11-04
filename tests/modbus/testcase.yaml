@@ -1,0 +1,4 @@
+tests:
+  controller.modbus_map:
+    platform_allow: qemu_cortex_m3
+    tags: [controller, modbus]

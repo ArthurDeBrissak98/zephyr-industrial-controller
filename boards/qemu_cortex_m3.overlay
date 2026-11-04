@@ -1,28 +1,15 @@
-#include <mem.h>
+#include "settings_flash.overlay"
 
-/ {
-    chosen {
-        zephyr,settings-partition = &controller_storage;
-    };
-    settings_flash_controller {
-        compatible = "zephyr,semihost-flash";
-        filename = "controller_flash.bin";
-        #address-cells = <1>;
-        #size-cells = <1>;
-        settings_flash: flash@0 {
-            compatible = "soc-nv-flash";
-            reg = <0 DT_SIZE_K(16)>;
-            erase-block-size = <4096>;
-            write-block-size = <1>;
-            partitions {
-                compatible = "fixed-partitions";
-                #address-cells = <1>;
-                #size-cells = <1>;
-                controller_storage: partition@0 {
-                    label = "controller-settings";
-                    reg = <0 DT_SIZE_K(16)>;
-                };
-            };
-        };
+/* UART1 в QEMU реализован моделью PL011. Нужна настройка формата RTU. */
+&uart1 {
+    compatible = "arm,pl011";
+    reg = <0x4000d000 0x1000>;
+    clock-frequency = <12000000>;
+    current-speed = <19200>;
+    interrupt-names = "irq";
+    status = "okay";
+    controller_modbus: modbus {
+        compatible = "zephyr,modbus-serial";
+        status = "okay";
     };
 };

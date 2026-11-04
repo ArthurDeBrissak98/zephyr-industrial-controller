@@ -32,6 +32,7 @@ int controller_app_settings_erase(void);
 void controller_app_init(void);
 void controller_app_tick(void);
 int controller_app_start(void);
+int controller_app_setpoint_set(int setpoint_x10);
 void controller_app_stop(void);
 int controller_app_reset(void);
 int controller_app_configure(struct controller_config config);

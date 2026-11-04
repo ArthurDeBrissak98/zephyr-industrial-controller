@@ -14,6 +14,9 @@ static int injected_value;
 static bool settings_ready;
 static bool settings_present;
 static int settings_error;
+static bool setpoint_override;
+static int setpoint_x10;
+static enum controller_profile setpoint_profile;
 
 void controller_app_init(void)
 {
@@ -25,6 +28,7 @@ void controller_app_init(void)
     settings_ready = false;
     settings_present = false;
     settings_error = 0;
+    setpoint_override = false;
     controller_io_inject_wire_break(false);
     controller_io_inject_signal(false, 0);
     controller_io_write(0);
@@ -38,6 +42,8 @@ static void sample_locked(void)
     uint32_t previous_faults = controller.active_faults;
     uint32_t previous_warnings = controller.active_warnings;
     controller_io_read(&controller.config, &sample);
+    if (setpoint_profile != controller.config.profile) setpoint_override = false;
+    if (setpoint_override) sample.setpoint_x10 = setpoint_x10;
     controller_update(&controller, &sample, k_uptime_get());
     controller_io_write(controller.frequency_x100);
     if (controller.active_warnings != previous_warnings) {
@@ -62,6 +68,25 @@ void controller_app_tick(void)
     sample_locked();
     k_mutex_unlock(&controller.mutex);
     k_mutex_unlock(&controller_lock);
+}
+
+int controller_app_setpoint_set(int value)
+{
+    k_mutex_lock(&controller_lock, K_FOREVER);
+    k_mutex_lock(&controller.mutex, K_FOREVER);
+    bool pump = controller.config.profile == PROFILE_PUMP;
+    int ret = 0;
+    if (value < (pump ? 0 : -200) || value > (pump ? 1000 : 400)) {
+        ret = -EINVAL;
+    } else {
+        setpoint_x10 = value;
+        setpoint_profile = controller.config.profile;
+        setpoint_override = true;
+        controller.sample.setpoint_x10 = value;
+    }
+    k_mutex_unlock(&controller.mutex);
+    k_mutex_unlock(&controller_lock);
+    return ret;
 }
 
 int controller_app_start(void)
@@ -101,7 +126,9 @@ int controller_app_configure(struct controller_config config)
 {
     k_mutex_lock(&controller_lock, K_FOREVER);
     k_mutex_lock(&controller.mutex, K_FOREVER);
+    bool profile_changed = controller.config.profile != config.profile;
     int ret = controller_configure(&controller, config, k_uptime_get());
+    if (!ret && profile_changed) setpoint_override = false;
     k_mutex_unlock(&controller.mutex);
     k_mutex_unlock(&controller_lock);
     return ret;
@@ -194,7 +221,10 @@ static int load_settings_locked(void)
     struct controller_parameters parameters;
     int ret = controller_settings_read(&parameters);
     if (!ret) ret = controller_parameters_apply(&controller, &parameters, k_uptime_get());
-    if (!ret) settings_present = true;
+    if (!ret) {
+        settings_present = true;
+        setpoint_override = false;
+    }
     if (ret == -ENOENT) settings_present = false;
     return ret;
 }

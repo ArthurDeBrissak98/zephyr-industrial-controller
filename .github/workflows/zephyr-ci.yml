@@ -49,6 +49,9 @@ jobs:
       - name: Проверить команды Shell в QEMU
         run: python scripts/demo_test.py --elf build/zephyr/zephyr.elf
 
+      - name: Проверить Modbus RTU на втором UART QEMU
+        run: python -m scripts.test_modbus --elf build/zephyr/zephyr.elf
+
       - name: Проверить валидатор YAML
         run: python -m unittest discover -s tests/host -p 'test_*.py'
 
@@ -60,6 +63,12 @@ jobs:
 
       - name: Проверить сборку аппаратного ADC для nRF52840 DK
         run: west build -b nrf52840dk/nrf52840 -d build-hw . -o=-j4
+
+      - name: Проверить сборку ADC и Modbus для nRF52840 DK
+        run: |
+          west build -b nrf52840dk/nrf52840 -d build-hw-modbus . -o=-j4 -- \
+            -DEXTRA_CONF_FILE=config/modbus.conf \
+            -DEXTRA_DTC_OVERLAY_FILE=boards/nrf52840dk_modbus.overlay
 
       - name: Собрать аппаратный watchdog для MPS2
         run: west build -b mps2/an385 -d build-watchdog . -o=-j4
@@ -81,6 +90,7 @@ jobs:
             twister-out/twister*.xml
             twister-out/**/handler.log
             build/demo-test.log
+            build/modbus-test.log
             build/scenarios.log
             build/storage-test.log
             build-watchdog/watchdog-test.log
