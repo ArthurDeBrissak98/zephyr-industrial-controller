@@ -73,7 +73,7 @@ void controller_init(struct controller *ctrl)
 {
     memset(ctrl, 0, sizeof(*ctrl));
     k_mutex_init(&ctrl->mutex);
-    ctrl->last_update_ms = -1;
+    ctrl->last_update_ms = 0;
     ctrl->config = (struct controller_config) {
         .profile = PROFILE_PUMP,
         .mode = INPUT_4_20MA,
@@ -196,6 +196,7 @@ static int controller_reset_locked(struct controller *ctrl, int64_t now_ms)
     ctrl->frequency_x100 = 0;
     ctrl->integral = 0;
     ctrl->state = STATE_READY;
+    ctrl->last_update_ms = now_ms;
     record_event(ctrl, EVENT_RESET, FAULT_NONE, ctrl->active_warnings, now_ms);
     return 0;
 }
@@ -221,6 +222,7 @@ static int controller_configure_locked(struct controller *ctrl, struct controlle
     ctrl->frequency_x100 = 0;
     ctrl->integral = 0;
     ctrl->state = STATE_STOPPED;
+    ctrl->last_update_ms = now_ms;
     record_event(ctrl, EVENT_INPUT_CHANGED, FAULT_NONE, ctrl->active_warnings, now_ms);
     return 0;
 }
@@ -228,7 +230,7 @@ static int controller_configure_locked(struct controller *ctrl, struct controlle
 static int controller_protection_configure_locked(struct controller *ctrl, enum protection_id id,
                                     struct protection_config config, int64_t now_ms)
 {
-    if (id < 0 || id >= PROTECTION_COUNT) return -EINVAL;
+    if ((unsigned int)id >= PROTECTION_COUNT) return -EINVAL;
     if (ctrl->state == STATE_RUNNING || ctrl->state == STATE_FAULT) return -EBUSY;
     int minimum = ctrl->config.profile == PROFILE_PUMP ? 0 : -200;
     int maximum = ctrl->config.profile == PROFILE_PUMP ? 1000 : 400;

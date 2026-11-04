@@ -247,6 +247,9 @@ ZTEST(controller_logic, test_warning_then_trip_and_manual_reset)
 
 ZTEST(controller_logic, test_protection_settings_validation)
 {
+    struct protection_config valid = ctrl.protections[PROTECTION_LOW_TRIP];
+    zassert_equal(controller_protection_configure(&ctrl, (enum protection_id)-1, valid, 0), -EINVAL);
+    zassert_equal(controller_protection_configure(&ctrl, PROTECTION_COUNT, valid, 0), -EINVAL);
     struct protection_config config = {100, 20, -1, true};
     zassert_equal(controller_protection_configure(&ctrl, PROTECTION_LOW_TRIP, config, 0), -EINVAL);
     config.delay_ms = 60001;
@@ -590,6 +593,75 @@ ZTEST(controller_logic, test_dt_rebases_after_negative_time_and_handles_extreme_
     controller_update(&ctrl, &sample, INT64_MAX);
     zassert_equal(ctrl.integral, CONTROLLER_INTEGRAL_LIMIT);
     zassert_equal(ctrl.last_update_ms, INT64_MAX);
+}
+
+static int rejected_start_results[2];
+
+static void rejected_start_worker(void *a, void *b, void *c)
+{
+    ARG_UNUSED(a);
+    ARG_UNUSED(b);
+    ARG_UNUSED(c);
+    rejected_start_results[0] = controller_start(&ctrl, 0);
+    rejected_start_results[1] = controller_start(&ctrl, 0);
+    k_sem_give(&api_finished);
+}
+
+ZTEST(controller_logic, test_rejected_start_twice_releases_mutex)
+{
+    ctrl.state = STATE_READY;
+    zassert_false(ctrl.sample_valid);
+    k_sem_reset(&api_finished);
+    k_thread_create(&api_thread, api_stack, K_THREAD_STACK_SIZEOF(api_stack),
+                    rejected_start_worker, NULL, NULL, NULL, 5, 0, K_NO_WAIT);
+    int finished = k_sem_take(&api_finished, K_SECONDS(1));
+    int joined = k_thread_join(&api_thread, K_SECONDS(1));
+    if (joined) k_thread_abort(&api_thread);
+    zassert_ok(finished);
+    zassert_ok(joined);
+    zassert_equal(rejected_start_results[0], -EACCES);
+    zassert_equal(rejected_start_results[1], -EACCES);
+    int unlocked = k_mutex_lock(&ctrl.mutex, K_NO_WAIT);
+    if (!unlocked) k_mutex_unlock(&ctrl.mutex);
+    zassert_ok(unlocked, "Rejected start left the mutex owned by another thread");
+}
+
+ZTEST(controller_logic, test_ten_saturated_ticks_do_not_accumulate_integral)
+{
+    struct sensor_sample sample = healthy;
+    controller_update(&ctrl, &sample, 0);
+    zassert_ok(controller_start(&ctrl, 0));
+    ctrl.frequency_x100 = 5000;
+    ctrl.integral = 1000;
+    sample.setpoint_x10 = 5000;
+    for (int i = 1; i <= 10; i++) {
+        controller_update(&ctrl, &sample, i * 100);
+        zassert_equal(ctrl.integral, 1000);
+        zassert_equal(ctrl.frequency_x100, 5000);
+    }
+    ctrl.frequency_x100 = 0;
+    ctrl.integral = -1000;
+    sample.setpoint_x10 = -5000;
+    for (int i = 11; i <= 20; i++) {
+        controller_update(&ctrl, &sample, i * 100);
+        zassert_equal(ctrl.integral, -1000);
+        zassert_equal(ctrl.frequency_x100, 0);
+    }
+}
+
+ZTEST(controller_logic, test_configuration_resets_time_after_long_idle)
+{
+    zassert_equal(ctrl.last_update_ms, 0);
+    struct controller_config config = ctrl.config;
+    zassert_ok(controller_configure(&ctrl, config, 600000));
+    zassert_equal(ctrl.last_update_ms, 600000);
+    zassert_equal(ctrl.config.pid.kp, 50);
+    struct sensor_sample sample = healthy;
+    sample.setpoint_x10 = 510;
+    controller_update(&ctrl, &sample, 600000);
+    zassert_ok(controller_start(&ctrl, 600000));
+    controller_update(&ctrl, &sample, 600100);
+    zassert_equal(ctrl.integral, 1000);
 }
 
 ZTEST_SUITE(controller_logic, NULL, NULL, before, NULL, NULL);
