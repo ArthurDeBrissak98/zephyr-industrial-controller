@@ -75,6 +75,7 @@ struct controller {
     uint32_t event_sequence;
 };
 
+// Инициализация до запуска потоков. Остальные операции с контроллером — не из ISR.
 void controller_init(struct controller *ctrl);
 void controller_update(struct controller *ctrl, const struct sensor_sample *sample,
                        int64_t now_ms);

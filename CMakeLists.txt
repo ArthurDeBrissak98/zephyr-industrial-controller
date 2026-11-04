@@ -3,6 +3,7 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(industrial_controller)
 
 target_include_directories(app PRIVATE include)
+target_compile_options(app PRIVATE -Wall -Wextra)
 target_sources(app PRIVATE src/main.c src/controller.c src/sensor_signal.c src/protection.c src/controller_app.c src/shell_cli.c)
 if(CONFIG_APP_SIMULATED_IO)
     target_sources(app PRIVATE src/io_sim.c)

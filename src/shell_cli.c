@@ -26,17 +26,23 @@ static bool parse_integer(const char *text, int *value)
 
 static int cmd_start(const struct shell *sh, size_t argc, char **argv)
 {
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
     return command_result(sh, controller_app_start());
 }
 
 static int cmd_stop(const struct shell *sh, size_t argc, char **argv)
 {
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
     controller_app_stop();
     return command_result(sh, 0);
 }
 
 static int cmd_reset(const struct shell *sh, size_t argc, char **argv)
 {
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
     return command_result(sh, controller_app_reset());
 }
 
@@ -75,6 +81,8 @@ static void format_flags(char *buffer, size_t capacity, uint32_t mask,
 
 static int cmd_status(const struct shell *sh, size_t argc, char **argv)
 {
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
     struct controller_status status;
     controller_app_status(&status);
     shell_print(sh, "state=%s profile=%s mode=%s",
@@ -109,6 +117,7 @@ static int cmd_status(const struct shell *sh, size_t argc, char **argv)
 
 static int cmd_inject(const struct shell *sh, size_t argc, char **argv)
 {
+    ARG_UNUSED(argc);
     if (!strcmp(argv[1], "signal")) {
         bool enabled = strcmp(argv[2], "off") != 0;
         int value = 0;
@@ -133,6 +142,7 @@ static int cmd_inject(const struct shell *sh, size_t argc, char **argv)
 
 static int cmd_profile(const struct shell *sh, size_t argc, char **argv)
 {
+    ARG_UNUSED(argc);
     struct controller_status status;
     controller_app_status(&status);
     if (!strcmp(argv[1], "pump")) status.config.profile = PROFILE_PUMP;
@@ -143,6 +153,7 @@ static int cmd_profile(const struct shell *sh, size_t argc, char **argv)
 
 static int cmd_mode(const struct shell *sh, size_t argc, char **argv)
 {
+    ARG_UNUSED(argc);
     struct controller_status status;
     controller_app_status(&status);
     if (!strcmp(argv[1], "4-20ma")) status.config.mode = INPUT_4_20MA;
@@ -153,6 +164,8 @@ static int cmd_mode(const struct shell *sh, size_t argc, char **argv)
 
 static int cmd_events(const struct shell *sh, size_t argc, char **argv)
 {
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
     struct controller_event events[EVENT_CAPACITY];
     size_t count = controller_app_events(events, EVENT_CAPACITY);
     for (size_t i = 0; i < count; i++) {
@@ -183,6 +196,8 @@ static int protection_id_parse(const char *name)
 
 static int cmd_protection_show(const struct shell *sh, size_t argc, char **argv)
 {
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
     struct controller_status status;
     controller_app_status(&status);
     for (int i = 0; i < PROTECTION_COUNT; i++) {
@@ -196,6 +211,7 @@ static int cmd_protection_show(const struct shell *sh, size_t argc, char **argv)
 
 static int cmd_protection_set(const struct shell *sh, size_t argc, char **argv)
 {
+    ARG_UNUSED(argc);
     int id = protection_id_parse(argv[1]);
     struct protection_config config = { .enabled = true };
     if (id < 0 || !parse_integer(argv[2], &config.threshold_x10) ||
@@ -206,6 +222,7 @@ static int cmd_protection_set(const struct shell *sh, size_t argc, char **argv)
 
 static int cmd_protection_disable(const struct shell *sh, size_t argc, char **argv)
 {
+    ARG_UNUSED(argc);
     int id = protection_id_parse(argv[1]);
     if (id < 0) return command_result(sh, -EINVAL);
     struct controller_status status;
