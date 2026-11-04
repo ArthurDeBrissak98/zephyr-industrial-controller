@@ -1,6 +1,7 @@
 #include "controller.h"
 #include <zephyr/ztest.h>
 #include <errno.h>
+#include <limits.h>
 
 static struct controller ctrl;
 static const struct sensor_sample healthy = {
@@ -98,7 +99,7 @@ ZTEST(controller_logic, test_frequency_limits_and_ramp)
         zassert_between_inclusive(ctrl.frequency_x100, 0, 5000);
     }
     zassert_equal(ctrl.frequency_x100, 5000);
-    zassert_equal(ctrl.integral, 100000);
+    zassert_equal(ctrl.integral, CONTROLLER_INTEGRAL_LIMIT);
     sample.setpoint_x10 = -5000;
     sample.measured_x10 = 5000;
     for (int i = 0; i < 60; i++) {
@@ -108,7 +109,7 @@ ZTEST(controller_logic, test_frequency_limits_and_ramp)
         zassert_between_inclusive(ctrl.frequency_x100, 0, 5000);
     }
     zassert_equal(ctrl.frequency_x100, 0);
-    zassert_equal(ctrl.integral, -100000);
+    zassert_equal(ctrl.integral, -CONTROLLER_INTEGRAL_LIMIT);
 }
 
 ZTEST(controller_logic, test_voltage_mode_has_no_current_loop_fault)
@@ -322,6 +323,124 @@ ZTEST(controller_logic, test_journal_keeps_input_context_after_configuration_cha
     zassert_equal(event.mode, INPUT_4_20MA);
     zassert_false(event.signal_valid);
     zassert_equal(event.current_ua, 2000);
+}
+
+ZTEST(controller_logic, test_pi_integrates_elapsed_time)
+{
+    static struct controller fast;
+    struct sensor_sample sample = healthy;
+    sample.setpoint_x10 = 510;
+    controller_init(&fast);
+    controller_update(&ctrl, &sample, 0);
+    controller_update(&fast, &sample, 0);
+    zassert_ok(controller_start(&ctrl, 0));
+    zassert_ok(controller_start(&fast, 0));
+    ctrl.frequency_x100 = 2500;
+    fast.frequency_x100 = 2500;
+    for (int i = 1; i <= 10; i++) controller_update(&ctrl, &sample, i * 100);
+    for (int i = 1; i <= 40; i++) controller_update(&fast, &sample, i * 25);
+    zassert_equal(ctrl.integral, 10000);
+    zassert_equal(fast.integral, ctrl.integral);
+    zassert_equal(ctrl.frequency_x100, 2600);
+    zassert_equal(fast.frequency_x100, ctrl.frequency_x100);
+    zassert_equal(ctrl.last_time_ms, 1000);
+}
+
+ZTEST(controller_logic, test_pi_ignores_repeated_and_old_timestamps)
+{
+    struct sensor_sample sample = healthy;
+    sample.setpoint_x10 = 501;
+    controller_update(&ctrl, &sample, 0);
+    zassert_ok(controller_start(&ctrl, 0));
+    controller_update(&ctrl, &sample, 10);
+    zassert_equal(ctrl.integral, 10);
+    controller_update(&ctrl, &sample, 10);
+    controller_update(&ctrl, &sample, 5);
+    zassert_equal(ctrl.integral, 10);
+    zassert_equal(ctrl.last_time_ms, 10);
+    controller_update(&ctrl, &sample, 15);
+    zassert_equal(ctrl.integral, 15);
+}
+
+ZTEST(controller_logic, test_pi_does_not_integrate_stopped_time)
+{
+    struct sensor_sample sample = healthy;
+    sample.setpoint_x10 = 510;
+    controller_update(&ctrl, &sample, 0);
+    zassert_ok(controller_start(&ctrl, 0));
+    controller_update(&ctrl, &sample, 100);
+    controller_stop(&ctrl, 101);
+    zassert_ok(controller_start(&ctrl, 10000));
+    controller_update(&ctrl, &sample, 10100);
+    zassert_equal(ctrl.integral, 1000);
+}
+
+ZTEST(controller_logic, test_pi_saturates_before_multiplication_overflows)
+{
+    struct sensor_sample sample = healthy;
+    sample.setpoint_x10 = INT_MAX;
+    controller_update(&ctrl, &sample, 0);
+    zassert_ok(controller_start(&ctrl, 0));
+    controller_update(&ctrl, &sample, INT64_MAX);
+    zassert_equal(ctrl.integral, CONTROLLER_INTEGRAL_LIMIT);
+    zassert_between_inclusive(ctrl.frequency_x100, 0, 5000);
+    controller_init(&ctrl);
+    sample.setpoint_x10 = INT_MIN;
+    controller_update(&ctrl, &sample, 0);
+    zassert_ok(controller_start(&ctrl, 0));
+    controller_update(&ctrl, &sample, INT64_MAX);
+    zassert_equal(ctrl.integral, -CONTROLLER_INTEGRAL_LIMIT);
+    zassert_between_inclusive(ctrl.frequency_x100, 0, 5000);
+}
+
+K_SEM_DEFINE(api_entered, 0, 1);
+K_SEM_DEFINE(api_finished, 0, 1);
+K_THREAD_STACK_DEFINE(api_stack, 2048);
+static struct k_thread api_thread;
+
+static void call_api(void *operation, void *unused1, void *unused2)
+{
+    int op = (int)(intptr_t)operation;
+    k_sem_give(&api_entered);
+    struct controller_config config = { PROFILE_PUMP, INPUT_4_20MA };
+    struct protection_config protection = {100, 20, 100, true};
+    struct controller_event event;
+    switch (op) {
+    case 0: controller_update(&ctrl, &healthy, 100); break;
+    case 1: controller_start(&ctrl, 100); break;
+    case 2: controller_stop(&ctrl, 100); break;
+    case 3: controller_reset(&ctrl, 100); break;
+    case 4: controller_configure(&ctrl, config, 100); break;
+    case 5: controller_protection_configure(&ctrl, PROTECTION_LOW_TRIP, protection, 100); break;
+    case 6: controller_event_get(&ctrl, 0, &event); break;
+    }
+    k_sem_give(&api_finished);
+}
+
+ZTEST(controller_logic, test_public_api_waits_for_controller_mutex)
+{
+    for (int op = 0; op < 7; op++) {
+        controller_init(&ctrl);
+        controller_update(&ctrl, &healthy, 0);
+        k_sem_reset(&api_entered);
+        k_sem_reset(&api_finished);
+        k_mutex_lock(&ctrl.mutex, K_FOREVER);
+        k_thread_create(&api_thread, api_stack, K_THREAD_STACK_SIZEOF(api_stack),
+                        call_api, (void *)(intptr_t)op, NULL, NULL, 5, 0, K_NO_WAIT);
+        int entered = k_sem_take(&api_entered, K_SECONDS(1));
+        int blocked = k_sem_take(&api_finished, K_MSEC(20));
+        k_mutex_unlock(&ctrl.mutex);
+        int finished = k_sem_take(&api_finished, K_SECONDS(1));
+        int joined = k_thread_join(&api_thread, K_SECONDS(1));
+        if (joined) k_thread_abort(&api_thread);
+        zassert_ok(entered);
+        zassert_equal(blocked, -EAGAIN, "API completed while another thread held the mutex");
+        zassert_ok(finished);
+        zassert_ok(joined);
+        int unlocked = k_mutex_lock(&ctrl.mutex, K_NO_WAIT);
+        if (!unlocked) k_mutex_unlock(&ctrl.mutex);
+        zassert_ok(unlocked, "API did not release the mutex");
+    }
 }
 
 ZTEST_SUITE(controller_logic, NULL, NULL, before, NULL, NULL);

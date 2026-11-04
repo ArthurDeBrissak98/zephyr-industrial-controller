@@ -51,16 +51,20 @@ static void sample_locked(void)
 void controller_app_tick(void)
 {
     k_mutex_lock(&controller_lock, K_FOREVER);
+    k_mutex_lock(&controller.mutex, K_FOREVER);
     sample_locked();
+    k_mutex_unlock(&controller.mutex);
     k_mutex_unlock(&controller_lock);
 }
 
 int controller_app_start(void)
 {
     k_mutex_lock(&controller_lock, K_FOREVER);
+    k_mutex_lock(&controller.mutex, K_FOREVER);
     // Перед пуском проверяем вход заново, не ждём следующего такта.
     if (controller.state != STATE_RUNNING) sample_locked();
     int ret = controller_start(&controller, k_uptime_get());
+    k_mutex_unlock(&controller.mutex);
     k_mutex_unlock(&controller_lock);
     return ret;
 }
@@ -68,16 +72,20 @@ int controller_app_start(void)
 void controller_app_stop(void)
 {
     k_mutex_lock(&controller_lock, K_FOREVER);
+    k_mutex_lock(&controller.mutex, K_FOREVER);
     controller_stop(&controller, k_uptime_get());
     controller_io_write(controller.frequency_x100);
+    k_mutex_unlock(&controller.mutex);
     k_mutex_unlock(&controller_lock);
 }
 
 int controller_app_reset(void)
 {
     k_mutex_lock(&controller_lock, K_FOREVER);
+    k_mutex_lock(&controller.mutex, K_FOREVER);
     if (controller.state == STATE_FAULT) sample_locked();
     int ret = controller_reset(&controller, k_uptime_get());
+    k_mutex_unlock(&controller.mutex);
     k_mutex_unlock(&controller_lock);
     return ret;
 }
@@ -85,7 +93,9 @@ int controller_app_reset(void)
 int controller_app_configure(struct controller_config config)
 {
     k_mutex_lock(&controller_lock, K_FOREVER);
+    k_mutex_lock(&controller.mutex, K_FOREVER);
     int ret = controller_configure(&controller, config, k_uptime_get());
+    k_mutex_unlock(&controller.mutex);
     k_mutex_unlock(&controller_lock);
     return ret;
 }
@@ -93,9 +103,11 @@ int controller_app_configure(struct controller_config config)
 int controller_app_inject(bool enabled)
 {
     k_mutex_lock(&controller_lock, K_FOREVER);
+    k_mutex_lock(&controller.mutex, K_FOREVER);
     int ret = enabled && controller.config.mode != INPUT_4_20MA ? -ENOTSUP :
               controller_io_inject_wire_break(enabled);
     if (!ret) wire_break_injected = enabled;
+    k_mutex_unlock(&controller.mutex);
     k_mutex_unlock(&controller_lock);
     return ret;
 }
@@ -103,6 +115,7 @@ int controller_app_inject(bool enabled)
 void controller_app_status(struct controller_status *status)
 {
     k_mutex_lock(&controller_lock, K_FOREVER);
+    k_mutex_lock(&controller.mutex, K_FOREVER);
     *status = (struct controller_status) {
         .state = controller.state,
         .config = controller.config,
@@ -121,17 +134,20 @@ void controller_app_status(struct controller_status *status)
     for (int i = 0; i < PROTECTION_COUNT; i++) {
         status->protections[i] = controller.protections[i];
     }
+    k_mutex_unlock(&controller.mutex);
     k_mutex_unlock(&controller_lock);
 }
 
 int controller_app_inject_signal(bool enabled, int value)
 {
     k_mutex_lock(&controller_lock, K_FOREVER);
+    k_mutex_lock(&controller.mutex, K_FOREVER);
     int ret = controller_io_inject_signal(enabled, value);
     if (!ret) {
         signal_injected = enabled;
         injected_value = enabled ? value : 0;
     }
+    k_mutex_unlock(&controller.mutex);
     k_mutex_unlock(&controller_lock);
     return ret;
 }
@@ -139,10 +155,12 @@ int controller_app_inject_signal(bool enabled, int value)
 size_t controller_app_events(struct controller_event *events, size_t capacity)
 {
     k_mutex_lock(&controller_lock, K_FOREVER);
+    k_mutex_lock(&controller.mutex, K_FOREVER);
     size_t count = MIN(capacity, controller.event_count);
     for (size_t i = 0; i < count; i++) {
         controller_event_get(&controller, i, &events[i]);
     }
+    k_mutex_unlock(&controller.mutex);
     k_mutex_unlock(&controller_lock);
     return count;
 }
@@ -150,7 +168,9 @@ size_t controller_app_events(struct controller_event *events, size_t capacity)
 int controller_app_protection_configure(enum protection_id id, struct protection_config config)
 {
     k_mutex_lock(&controller_lock, K_FOREVER);
+    k_mutex_lock(&controller.mutex, K_FOREVER);
     int ret = controller_protection_configure(&controller, id, config, k_uptime_get());
+    k_mutex_unlock(&controller.mutex);
     k_mutex_unlock(&controller_lock);
     return ret;
 }
