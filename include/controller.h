@@ -6,12 +6,14 @@
 #include <stdint.h>
 
 #include "sensor_signal.h"
+#include "protection.h"
 #define CONTROLLER_PERIOD_MS 100
 #define EVENT_CAPACITY 32
 
 enum controller_state { STATE_STOPPED, STATE_READY, STATE_RUNNING, STATE_FAULT };
 enum event_type { EVENT_READY, EVENT_START, EVENT_STOP, EVENT_FAULT,
-                  EVENT_FAULT_CLEARED, EVENT_RESET, EVENT_INPUT_CHANGED };
+                  EVENT_FAULT_CLEARED, EVENT_RESET, EVENT_INPUT_CHANGED,
+                  EVENT_WARNING, EVENT_WARNING_CLEARED, EVENT_PROTECTION_CHANGED };
 
 struct controller_config {
     enum controller_profile profile;
@@ -32,6 +34,7 @@ struct controller_event {
     enum event_type type;
     enum controller_state state;
     uint32_t faults;
+    uint32_t warnings;
     int current_ua;
     int frequency_x100;
     int voltage_mv;
@@ -44,6 +47,9 @@ struct controller {
     struct sensor_sample sample;
     bool sample_valid;
     struct signal_filter signal_filter;
+    struct protection_config protections[PROTECTION_COUNT];
+    struct protection_state protection_states[PROTECTION_COUNT];
+    uint32_t active_warnings;
     uint32_t active_faults;
     uint32_t latched_faults;
     int frequency_x100;
@@ -62,6 +68,8 @@ void controller_stop(struct controller *ctrl, int64_t now_ms);
 int controller_reset(struct controller *ctrl, int64_t now_ms);
 int controller_configure(struct controller *ctrl, struct controller_config config,
                          int64_t now_ms);
+int controller_protection_configure(struct controller *ctrl, enum protection_id id,
+                                    struct protection_config config, int64_t now_ms);
 bool controller_event_get(const struct controller *ctrl, size_t index,
                           struct controller_event *event);
 const char *controller_state_name(enum controller_state state);

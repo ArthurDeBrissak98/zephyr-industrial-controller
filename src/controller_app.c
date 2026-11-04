@@ -23,13 +23,18 @@ static void sample_locked(void)
     struct sensor_sample sample;
 
     uint32_t previous_faults = controller.active_faults;
+    uint32_t previous_warnings = controller.active_warnings;
     controller_io_read(&controller.config, &sample);
     controller_update(&controller, &sample, k_uptime_get());
     controller_io_write(controller.frequency_x100);
+    if (controller.active_warnings != previous_warnings) {
+        LOG_WRN("Warnings changed: active=0x%x measured_x10=%d",
+                controller.active_warnings, controller.sample.measured_x10);
+    }
     if (controller.active_faults != previous_faults) {
         if (controller.active_faults) {
-            LOG_ERR("FAULT %s: current_ua=%d voltage_mv=%d output_x100=%d",
-                    controller.active_faults & FAULT_WIRE_BREAK ? "WIRE_BREAK" : "INPUT_RANGE",
+            LOG_ERR("FAULT active=0x%x measured_x10=%d current_ua=%d voltage_mv=%d output_x100=%d",
+                    controller.active_faults, controller.sample.measured_x10,
                     sample.current_ua, sample.voltage_mv, controller_io_output());
         } else {
             LOG_INF("Input faults cleared; manual reset required");
@@ -95,12 +100,16 @@ void controller_app_status(struct controller_status *status)
         .state = controller.state,
         .config = controller.config,
         .sample = controller.sample,
+        .active_warnings = controller.active_warnings,
         .active_faults = controller.active_faults,
         .latched_faults = controller.latched_faults,
         .frequency_x100 = controller.frequency_x100,
         .output_x100 = controller_io_output(),
         .signal_valid = controller.sample_valid,
     };
+    for (int i = 0; i < PROTECTION_COUNT; i++) {
+        status->protections[i] = controller.protections[i];
+    }
     k_mutex_unlock(&controller_lock);
 }
 
@@ -121,4 +130,12 @@ size_t controller_app_events(struct controller_event *events, size_t capacity)
     }
     k_mutex_unlock(&controller_lock);
     return count;
+}
+
+int controller_app_protection_configure(enum protection_id id, struct protection_config config)
+{
+    k_mutex_lock(&controller_lock, K_FOREVER);
+    int ret = controller_protection_configure(&controller, id, config, k_uptime_get());
+    k_mutex_unlock(&controller_lock);
+    return ret;
 }

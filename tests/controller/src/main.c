@@ -191,4 +191,119 @@ ZTEST(controller_logic, test_configuration_resets_filter)
     zassert_equal(ctrl.sample.measured_x10, -200);
 }
 
+ZTEST(controller_logic, test_warning_then_trip_and_manual_reset)
+{
+    struct protection_config warning = {450, 20, 200, true};
+    struct protection_config trip = {400, 20, 400, true};
+    zassert_ok(controller_protection_configure(&ctrl, PROTECTION_LOW_WARNING, warning, 0));
+    zassert_ok(controller_protection_configure(&ctrl, PROTECTION_LOW_TRIP, trip, 0));
+    struct sensor_sample sample = healthy;
+    sample.current_ua = 10400;
+    controller_update(&ctrl, &sample, 0);
+    zassert_ok(controller_start(&ctrl, 0));
+    controller_update(&ctrl, &sample, 199);
+    zassert_equal(ctrl.active_warnings, 0);
+    controller_update(&ctrl, &sample, 200);
+    zassert_equal(ctrl.active_warnings, WARNING_LOW);
+    zassert_equal(ctrl.state, STATE_RUNNING);
+    zassert_true(ctrl.frequency_x100 > 0);
+    controller_update(&ctrl, &sample, 399);
+    zassert_equal(ctrl.active_faults, 0);
+    controller_update(&ctrl, &sample, 400);
+    zassert_equal(ctrl.active_faults, FAULT_PROCESS_LOW);
+    zassert_equal(ctrl.latched_faults, FAULT_PROCESS_LOW);
+    zassert_equal(ctrl.frequency_x100, 0);
+    zassert_equal(controller_reset(&ctrl, 401), -EBUSY);
+    for (int i = 5; i <= 8; i++) controller_update(&ctrl, &healthy, i * 100);
+    zassert_equal(ctrl.active_faults, 0);
+    zassert_equal(ctrl.active_warnings, 0);
+    zassert_equal(ctrl.state, STATE_FAULT);
+    zassert_ok(controller_reset(&ctrl, 801));
+    zassert_equal(ctrl.state, STATE_READY);
+    zassert_equal(ctrl.frequency_x100, 0);
+
+    int warnings = 0, cleared = 0, faults = 0;
+    struct controller_event event;
+    for (size_t i = 0; controller_event_get(&ctrl, i, &event); i++) {
+        if (event.type == EVENT_WARNING) {
+            warnings++;
+            zassert_equal(event.warnings, WARNING_LOW);
+            zassert_equal(event.timestamp_ms, 200);
+        }
+        if (event.type == EVENT_WARNING_CLEARED) cleared++;
+        if (event.type == EVENT_FAULT) faults++;
+    }
+    zassert_equal(warnings, 1);
+    zassert_equal(cleared, 1);
+    zassert_equal(faults, 1);
+}
+
+ZTEST(controller_logic, test_protection_settings_validation)
+{
+    struct protection_config config = {100, 20, -1, true};
+    zassert_equal(controller_protection_configure(&ctrl, PROTECTION_LOW_TRIP, config, 0), -EINVAL);
+    config.delay_ms = 60001;
+    zassert_equal(controller_protection_configure(&ctrl, PROTECTION_LOW_TRIP, config, 0), -EINVAL);
+    config = (struct protection_config) {990, 20, 100, true};
+    zassert_equal(controller_protection_configure(&ctrl, PROTECTION_LOW_TRIP, config, 0), -EINVAL);
+    config = (struct protection_config) {100, -1, 100, true};
+    zassert_equal(controller_protection_configure(&ctrl, PROTECTION_LOW_TRIP, config, 0), -EINVAL);
+    config = (struct protection_config) {100, 20, 100, true};
+    controller_update(&ctrl, &healthy, 0);
+    zassert_ok(controller_start(&ctrl, 0));
+    zassert_equal(controller_protection_configure(&ctrl, PROTECTION_LOW_TRIP, config, 0), -EBUSY);
+}
+
+ZTEST(controller_logic, test_bad_input_interrupts_pending_protection)
+{
+    struct protection_config config = {450, 20, 500, true};
+    zassert_ok(controller_protection_configure(&ctrl, PROTECTION_LOW_WARNING, config, 0));
+    struct sensor_sample sample = healthy;
+    sample.current_ua = 10400;
+    controller_update(&ctrl, &sample, 0);
+    sample.current_ua = 2000;
+    controller_update(&ctrl, &sample, 400);
+    sample.current_ua = 10400;
+    controller_update(&ctrl, &sample, 500);
+    controller_update(&ctrl, &sample, 999);
+    zassert_equal(ctrl.active_warnings, 0);
+    controller_update(&ctrl, &sample, 1000);
+    zassert_equal(ctrl.active_warnings, WARNING_LOW);
+}
+
+ZTEST(controller_logic, test_active_trip_survives_sensor_fault_until_hysteresis_clear)
+{
+    struct protection_config config = {600, 50, 0, true};
+    zassert_ok(controller_protection_configure(&ctrl, PROTECTION_HIGH_TRIP, config, 0));
+    struct sensor_sample sample = healthy;
+    sample.current_ua = 20000;
+    controller_update(&ctrl, &sample, 0);
+    zassert_equal(ctrl.active_faults, FAULT_PROCESS_HIGH);
+    sample.current_ua = 2000;
+    controller_update(&ctrl, &sample, 100);
+    zassert_equal(ctrl.active_faults, FAULT_PROCESS_HIGH | FAULT_WIRE_BREAK);
+    zassert_equal(controller_reset(&ctrl, 101), -EBUSY);
+    sample.current_ua = 16000;
+    controller_update(&ctrl, &sample, 200);
+    zassert_equal(ctrl.active_faults, FAULT_PROCESS_HIGH);
+    zassert_equal(controller_reset(&ctrl, 201), -EBUSY);
+    for (int i = 3; i <= 6; i++) controller_update(&ctrl, &healthy, i * 100);
+    zassert_equal(ctrl.active_faults, 0);
+    zassert_equal(ctrl.latched_faults, FAULT_PROCESS_HIGH | FAULT_WIRE_BREAK);
+    zassert_ok(controller_reset(&ctrl, 601));
+}
+
+ZTEST(controller_logic, test_profile_change_restores_protection_defaults)
+{
+    struct protection_config custom = {450, 20, 300, true};
+    zassert_ok(controller_protection_configure(&ctrl, PROTECTION_LOW_WARNING, custom, 0));
+    struct controller_config config = { PROFILE_PUMP, INPUT_0_10V };
+    zassert_ok(controller_configure(&ctrl, config, 0));
+    zassert_equal(ctrl.protections[PROTECTION_LOW_WARNING].threshold_x10, 450);
+    config.profile = PROFILE_AHU;
+    zassert_ok(controller_configure(&ctrl, config, 0));
+    zassert_equal(ctrl.protections[PROTECTION_LOW_WARNING].threshold_x10, 50);
+    zassert_equal(ctrl.protections[PROTECTION_LOW_WARNING].delay_ms, 500);
+}
+
 ZTEST_SUITE(controller_logic, NULL, NULL, before, NULL, NULL);
