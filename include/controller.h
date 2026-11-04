@@ -17,9 +17,17 @@ enum event_type { EVENT_READY, EVENT_START, EVENT_STOP, EVENT_FAULT,
                   EVENT_FAULT_CLEARED, EVENT_RESET, EVENT_INPUT_CHANGED,
                   EVENT_WARNING, EVENT_WARNING_CLEARED, EVENT_PROTECTION_CHANGED };
 
+struct pid_config {
+    int bias_x100;
+    int kp;
+    int ki;
+    int divisor;
+};
+
 struct controller_config {
     enum controller_profile profile;
     enum input_mode mode;
+    struct pid_config pid;
 };
 
 struct sensor_sample {
@@ -60,7 +68,7 @@ struct controller {
     uint32_t latched_faults;
     int frequency_x100;
     int64_t integral;
-    int64_t last_time_ms;
+    int64_t last_update_ms;
     struct controller_event events[EVENT_CAPACITY];
     size_t event_head;
     size_t event_count;

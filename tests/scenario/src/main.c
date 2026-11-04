@@ -103,7 +103,10 @@ ZTEST(controller_scenario, test_wire_break_stop_journal_reset_restart)
     zassert_ok(controller_app_inject_signal(false, 0));
     zassert_ok(controller_app_reset());
 
-    struct controller_config config = { PROFILE_PUMP, INPUT_0_10V };
+    controller_app_status(&status);
+    struct controller_config config = status.config;
+    config.profile = PROFILE_PUMP;
+    config.mode = INPUT_0_10V;
     zassert_ok(controller_app_configure(config));
     zassert_ok(controller_app_inject_signal(true, -1));
     zassert_equal(controller_app_start(), -EACCES);

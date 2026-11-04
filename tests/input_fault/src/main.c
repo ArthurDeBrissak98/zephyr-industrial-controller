@@ -5,10 +5,12 @@
 static void check_single_bad_sample(enum input_mode mode, int input, uint32_t fault)
 {
     controller_app_init();
-    struct controller_config config = { PROFILE_PUMP, mode };
-    zassert_ok(controller_app_configure(config));
-
     struct controller_status status;
+    controller_app_status(&status);
+    struct controller_config config = status.config;
+    config.profile = PROFILE_PUMP;
+    config.mode = mode;
+    zassert_ok(controller_app_configure(config));
     controller_app_status(&status);
     for (int i = 0; i < PROTECTION_COUNT; i++) {
         struct protection_config protection = status.protections[i];
