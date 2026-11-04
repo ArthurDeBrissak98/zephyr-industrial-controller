@@ -58,6 +58,11 @@ jobs:
       - name: Выполнить YAML-сценарии и перезапуски NVS
         run: python -m scripts.run_scenarios --elf build/zephyr/zephyr.elf
 
+      - name: Выполнить YAML-сценарий чтения Modbus
+        run: |
+          python -m scripts.run_scenarios --file scenarios/modbus_read_state.yaml \
+            --elf build/zephyr/zephyr.elf --log build/modbus-scenario.log
+
       - name: Проверить отказ и повреждение flash
         run: python -m scripts.test_storage --elf build/zephyr/zephyr.elf
 
@@ -91,6 +96,7 @@ jobs:
             twister-out/**/handler.log
             build/demo-test.log
             build/modbus-test.log
+            build/modbus-scenario.log
             build/scenarios.log
             build/storage-test.log
             build-watchdog/watchdog-test.log

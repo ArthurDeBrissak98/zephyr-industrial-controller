@@ -9,6 +9,7 @@ import zlib
 
 import yaml
 from .demo_test import Console
+from .modbus_client import Client
 
 STATUS_FIELDS = {
     "sensor_fault_names", "process_fault_names", "read_error", "sensor_faults", "process_faults", "state", "profile", "mode", "active", "latched", "warnings", "output_x100",
@@ -54,7 +55,7 @@ def load_scenarios(path):
 def validate_step(step):
     if not isinstance(step, dict):
         raise ValueError("Шаг должен быть словарём")
-    actions = set(step) & {"command", "status", "wait_ms", "restart", "corrupt_settings_crc"}
+    actions = set(step) & {"command", "status", "wait_ms", "restart", "corrupt_settings_crc", "modbus_read"}
     if len(actions) != 1:
         raise ValueError("В шаге должно быть ровно одно действие")
     action = next(iter(actions))
@@ -80,6 +81,17 @@ def validate_step(step):
         timeout = step.get("timeout_ms", 2000)
         if type(timeout) is not int or not 1 <= timeout <= 10000:
             raise ValueError("timeout_ms должен быть от 1 до 10000")
+    elif action == "modbus_read":
+        request = step[action]
+        if not isinstance(request, dict) or set(request) != {"address", "count", "expect"}:
+            raise ValueError("modbus_read требует address, count и expect")
+        address, count, expected = request["address"], request["count"], request["expect"]
+        if (type(address) is not int or type(count) is not int
+                or not 0 <= address < 5 or not 1 <= count <= 5 or address + count > 5):
+            raise ValueError("modbus_read: запрос выходит за карту регистров 0–4")
+        if (not isinstance(expected, list) or len(expected) != count
+                or any(type(x) is not int or not 0 <= x <= 65535 for x in expected)):
+            raise ValueError("modbus_read: expect должен содержать count чисел uint16")
     elif action == "wait_ms":
         if type(step["wait_ms"]) is not int or not 0 <= step["wait_ms"] <= 5000:
             raise ValueError("wait_ms должен быть от 0 до 5000")
@@ -125,10 +137,26 @@ def corrupt_settings_crc(storage):
 
 def run_scenario(scenario, elf, qemu, log):
     console = None
+    modbus = None
+    uses_modbus = any("modbus_read" in step for step in scenario["steps"])
     log.append(f"SCENARIO {scenario['name']}")
     with tempfile.TemporaryDirectory(prefix="controller-scenario-") as storage:
+        socket_path = Path(storage, "modbus.sock")
+
+        def start_instance():
+            extra = []
+            if uses_modbus:
+                socket_path.unlink(missing_ok=True)
+                extra = ["-serial", f"unix:{socket_path},server=on,wait=off"]
+            instance = Console(elf, qemu, storage, extra_args=extra)
+            try:
+                return instance, Client(socket_path, log) if uses_modbus else None
+            except Exception:
+                instance.close()
+                raise
+
         try:
-            console = Console(elf, qemu, storage)
+            console, modbus = start_instance()
             for index, step in enumerate(scenario["steps"], 1):
                 log.append(f"STEP {index}: {step}")
                 if "command" in step:
@@ -145,17 +173,27 @@ def run_scenario(scenario, elf, qemu, log):
                         if time.monotonic() >= deadline:
                             raise AssertionError(f"Не дождались status {step['status']}: {output}")
                         time.sleep(0.02)
+                elif "modbus_read" in step:
+                    request = step["modbus_read"]
+                    actual = modbus.read(request["address"], request["count"])
+                    if actual != tuple(request["expect"]):
+                        raise AssertionError(f"Modbus: ожидали {request['expect']}, получили {list(actual)}")
                 elif "wait_ms" in step:
                     time.sleep(step["wait_ms"] / 1000)
                 else:
+                    if modbus:
+                        modbus.socket.close()
+                        modbus = None
                     log.extend(console.transcript)
                     console.close()
                     console = None
                     if "corrupt_settings_crc" in step:
                         corrupt_settings_crc(storage)
-                    console = Console(elf, qemu, storage)
+                    console, modbus = start_instance()
             print(f"PASS: {scenario['name']}")
         finally:
+            if modbus:
+                modbus.socket.close()
             if console:
                 log.extend(console.transcript)
                 console.close()
