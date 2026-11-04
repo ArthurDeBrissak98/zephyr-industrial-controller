@@ -44,6 +44,10 @@ jobs:
       - name: Проверить команды Shell в QEMU
         run: python scripts/demo_test.py --elf build/zephyr/zephyr.elf
 
+      - name: Опубликовать отчёт тестов
+        if: always()
+        run: python scripts/ci_summary.py
+
       - name: Сохранить результаты
         if: always()
         uses: actions/upload-artifact@v4
