@@ -15,7 +15,7 @@
 enum controller_state { STATE_STOPPED, STATE_READY, STATE_RUNNING, STATE_FAULT };
 enum event_type { EVENT_READY, EVENT_START, EVENT_STOP, EVENT_FAULT,
                   EVENT_FAULT_CLEARED, EVENT_RESET, EVENT_INPUT_CHANGED,
-                  EVENT_WARNING, EVENT_WARNING_CLEARED, EVENT_PROTECTION_CHANGED, EVENT_SETTINGS_LOADED };
+                  EVENT_WARNING, EVENT_WARNING_CLEARED, EVENT_PROTECTION_CHANGED, EVENT_SETTINGS_LOADED, EVENT_MOTOR_CHANGED };
 
 struct pid_config {
     int bias_x100;
@@ -44,7 +44,16 @@ struct controller_parameters {
     struct protection_config protections[PROTECTION_COUNT];
 };
 
+enum motor_feedback_channel { MOTOR_FEEDBACK_CURRENT, MOTOR_FEEDBACK_FREQUENCY };
+struct motor_feedback {
+    int current_ma;
+    int frequency_x100;
+    bool valid;
+    bool available;
+};
+
 struct sensor_sample {
+    struct motor_feedback motor;
     int read_error;
     int current_ua;
     int voltage_mv;
@@ -54,6 +63,9 @@ struct sensor_sample {
 };
 
 struct controller_event {
+    struct motor_feedback motor;
+    int motor_nominal_current_ma;
+    int motor_nominal_frequency_x100;
     uint32_t sequence;
     enum controller_profile profile;
     enum input_mode mode;
@@ -78,6 +90,10 @@ struct controller {
     struct signal_filter signal_filter;
     struct protection_config protections[PROTECTION_COUNT];
     struct protection_state protection_states[PROTECTION_COUNT];
+    struct protection_limit motor_protections[MOTOR_PROTECTION_COUNT];
+    struct protection_state motor_protection_states[MOTOR_PROTECTION_COUNT];
+    bool motor_feedback_seen;
+    bool motor_feedback_valid;
     uint32_t active_warnings;
     uint32_t sensor_faults;
     uint32_t process_faults;
@@ -93,6 +109,7 @@ struct controller {
 };
 
 // Инициализация до запуска потоков. Остальные операции с контроллером — не из ISR.
+int controller_motor_configure(struct controller *ctrl, struct motor_parameters motor, int64_t now_ms);
 int controller_motor_validate(const struct motor_parameters *motor);
 struct motor_parameters controller_motor_defaults(void);
 void controller_init(struct controller *ctrl);

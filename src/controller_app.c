@@ -8,6 +8,7 @@
 LOG_MODULE_REGISTER(controller_app, LOG_LEVEL_INF);
 K_MUTEX_DEFINE(controller_lock);
 static struct controller controller;
+static bool motor_injected[2];
 static bool signal_injected;
 static bool wire_break_injected;
 static int injected_value;
@@ -31,6 +32,10 @@ void controller_app_init(void)
     setpoint_override = false;
     controller_io_inject_wire_break(false);
     controller_io_inject_signal(false, 0);
+    for (int i = 0; i < 2; i++) {
+        motor_injected[i] = false;
+        controller_io_inject_motor(i, false, 0);
+    }
     controller_io_write(0);
     k_mutex_unlock(&controller_lock);
 }
@@ -115,7 +120,7 @@ int controller_app_motor_configure(unsigned int first, const uint16_t *values, s
     }
     ret = controller_motor_validate(&candidate);
     // Фаза 2: единая запись под теми же замками, без промежуточного состояния.
-    if (!ret) controller.config.motor = candidate;
+    if (!ret) ret = controller_motor_configure(&controller, candidate, k_uptime_get());
 out:
     k_mutex_unlock(&controller.mutex);
     k_mutex_unlock(&controller_lock);
@@ -184,6 +189,9 @@ void controller_app_status(struct controller_status *status)
     k_mutex_lock(&controller_lock, K_FOREVER);
     k_mutex_lock(&controller.mutex, K_FOREVER);
     *status = (struct controller_status) {
+        .motor_feedback_valid = controller.motor_feedback_valid,
+        .motor_current_injected = motor_injected[MOTOR_FEEDBACK_CURRENT],
+        .motor_frequency_injected = motor_injected[MOTOR_FEEDBACK_FREQUENCY],
         .state = controller.state,
         .config = controller.config,
         .sample = controller.sample,
@@ -206,6 +214,7 @@ void controller_app_status(struct controller_status *status)
     for (int i = 0; i < PROTECTION_COUNT; i++) {
         status->protections[i] = controller.protections[i];
     }
+    for (int i = 0; i < MOTOR_PROTECTION_COUNT; i++) status->motor_protections[i] = controller.motor_protections[i];
     k_mutex_unlock(&controller.mutex);
     k_mutex_unlock(&controller_lock);
 }
@@ -336,4 +345,16 @@ void controller_app_events_clear(void)
     k_mutex_lock(&controller_lock, K_FOREVER);
     controller_events_clear(&controller);
     k_mutex_unlock(&controller_lock);
+}
+
+int controller_app_inject_motor(enum motor_feedback_channel channel, bool enabled, int value)
+{
+    if ((unsigned int)channel >= 2) return -EINVAL;
+    k_mutex_lock(&controller_lock, K_FOREVER);
+    k_mutex_lock(&controller.mutex, K_FOREVER);
+    int ret = controller_io_inject_motor(channel, enabled, value);
+    if (!ret) motor_injected[channel] = enabled;
+    k_mutex_unlock(&controller.mutex);
+    k_mutex_unlock(&controller_lock);
+    return ret;
 }

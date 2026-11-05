@@ -75,6 +75,7 @@ K_THREAD_DEFINE(adc_worker_thread, 1536, adc_worker, NULL, NULL, NULL, 5, 0, 0);
 int controller_io_read(const struct controller_config *config, struct sensor_sample *sample)
 {
     *sample = (struct sensor_sample) {
+        .motor = { .current_ma = -1, .frequency_x100 = -1, .valid = false },
         .current_ua = -1, .voltage_mv = -1,
         .setpoint_x10 = config->profile == PROFILE_PUMP ? 500 : 200,
         .read_error = -EIO,
@@ -124,5 +125,11 @@ int controller_io_inject_signal(bool enabled, int value)
 {
     ARG_UNUSED(enabled);
     ARG_UNUSED(value);
+    return -ENOTSUP;
+}
+
+int controller_io_inject_motor(enum motor_feedback_channel channel, bool enabled, int value)
+{
+    ARG_UNUSED(channel); ARG_UNUSED(enabled); ARG_UNUSED(value);
     return -ENOTSUP;
 }

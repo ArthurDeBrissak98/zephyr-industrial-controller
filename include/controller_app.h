@@ -8,6 +8,10 @@ struct controller_status {
     struct controller_config config;
     struct sensor_sample sample;
     struct protection_config protections[PROTECTION_COUNT];
+    struct protection_limit motor_protections[MOTOR_PROTECTION_COUNT];
+    bool motor_feedback_valid;
+    bool motor_current_injected;
+    bool motor_frequency_injected;
     uint32_t active_warnings;
     uint32_t sensor_faults;
     uint32_t process_faults;
@@ -38,6 +42,7 @@ void controller_app_stop(void);
 int controller_app_reset(void);
 int controller_app_configure(struct controller_config config);
 int controller_app_protection_configure(enum protection_id id, struct protection_config config);
+int controller_app_inject_motor(enum motor_feedback_channel channel, bool enabled, int value);
 int controller_app_inject(bool enabled);
 int controller_app_inject_signal(bool enabled, int value);
 void controller_app_status(struct controller_status *status);

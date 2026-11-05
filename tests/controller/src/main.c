@@ -447,13 +447,14 @@ static void call_api(void *operation, void *unused1, void *unused2)
     case 7: controller_parameters_get(&ctrl, &api_parameters); break;
     case 8: controller_parameters_apply(&ctrl, &api_parameters, 100); break;
     case 9: controller_events_clear(&ctrl); break;
+    case 10: controller_motor_configure(&ctrl, config.motor, 100); break;
     }
     k_sem_give(&api_finished);
 }
 
 ZTEST(controller_logic, test_public_api_waits_for_controller_mutex)
 {
-    for (int op = 0; op < 10; op++) {
+    for (int op = 0; op < 11; op++) {
         controller_init(&ctrl);
         controller_update(&ctrl, &healthy, 0);
         controller_parameters_get(&ctrl, &api_parameters);

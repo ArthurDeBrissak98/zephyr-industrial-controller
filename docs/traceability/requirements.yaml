@@ -349,3 +349,49 @@ requirements:
   - kind: scenario
     file: scenarios/modbus_motor_parameters.yaml
     name: modbus_motor_atomic_configuration
+- id: REQ-MOTOR-03
+  requirement: Моторные пороги предупреждения и аварии вычисляются как 105/110 процентов номинальных тока и частоты, с пересчётом при изменении и загрузке паспорта.
+  origin: project
+  acs880_topic: null
+  code:
+  - file: src/controller.c
+    symbol: motor_protection_defaults
+  verification:
+  - kind: ztest
+    file: tests/motor/src/main.c
+    suite: motor_protections
+    name: test_defaults_derive_from_motor_ratings
+  - kind: ztest
+    file: tests/settings/src/main.c
+    suite: settings_tests
+    name: test_settings_apply_recomputes_motor_limits
+- id: REQ-MOTOR-04
+  requirement: Отдельная моторная обратная связь управляет предупреждениями и авариями с задержкой и гистерезисом, не подменяя сигнал процесса.
+  origin: project
+  acs880_topic: null
+  code:
+  - file: src/controller.c
+    symbol: update_motor_protections
+  verification:
+  - kind: ztest
+    file: tests/motor/src/main.c
+    suite: motor_protections
+    name: test_current_warning_delay_hysteresis_and_no_stop
+  - kind: scenario
+    file: scenarios/motor_protections.yaml
+    name: motor_current_warning_trip_and_manual_reset
+  - kind: scenario
+    file: scenarios/motor_protections.yaml
+    name: motor_frequency_trip_uses_updated_nvs_rating
+- id: REQ-MOTOR-05
+  requirement: Потеря ранее доступной моторной обратной связи вызывает MOTOR_FEEDBACK и не снимает уже активную моторную аварию.
+  origin: project
+  acs880_topic: null
+  code:
+  - file: src/controller.c
+    symbol: controller_update_locked
+  verification:
+  - kind: ztest
+    file: tests/motor/src/main.c
+    suite: motor_protections
+    name: test_lost_feedback_stops_instead_of_disabling_protection

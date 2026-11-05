@@ -12,6 +12,9 @@ from .demo_test import Console
 from .modbus_client import Client
 
 STATUS_FIELDS = {
+    "motor_actual_current_ma", "motor_actual_frequency_x100", "motor_feedback_valid", "motor_feedback_available",
+    "motor_current_injected", "motor_frequency_injected", "motor_current_warning_ma",
+    "motor_current_trip_ma", "motor_frequency_warning_x100", "motor_frequency_trip_x100",
     "sensor_fault_names", "process_fault_names", "read_error", "sensor_faults", "process_faults", "state", "profile", "mode", "active", "latched", "warnings", "output_x100",
     "motor_voltage_v", "motor_current_ma", "motor_frequency_x100", "motor_speed_rpm", "motor_pole_pairs",
     "frequency_x100", "current_ua", "voltage_mv", "scaled_x10", "measured_x10",
