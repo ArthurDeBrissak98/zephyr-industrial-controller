@@ -291,6 +291,8 @@ static void controller_update_locked(struct controller *ctrl, const struct senso
                                  sample->motor.frequency_x100 >= 0;
     if (ctrl->motor_feedback_seen && !ctrl->motor_feedback_valid) ctrl->sensor_faults |= FAULT_MOTOR_FEEDBACK;
     update_protections(ctrl, now_ms);
+    // Проверяем и рабочую копию: повреждённые параметры не должны попасть в расчёт управления.
+    if (controller_motor_validate(&ctrl->config.motor)) ctrl->process_faults |= FAULT_CONFIG_ERROR;
     ctrl->active_faults = ctrl->sensor_faults | ctrl->process_faults;
 
     if (ctrl->active_faults != FAULT_NONE) {

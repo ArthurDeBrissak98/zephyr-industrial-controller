@@ -58,6 +58,48 @@ ZTEST(controller_logic, test_configure_rejects_invalid_pole_pair_calculation)
     zassert_ok(controller_configure(&ctrl, original, 100));
 }
 
+ZTEST(controller_logic, test_invalid_motor_stops_and_latches_configuration_fault)
+{
+    controller_update(&ctrl, &healthy, 0);
+    zassert_ok(controller_start(&ctrl, 10));
+    controller_update(&ctrl, &healthy, 100);
+    zassert_true(ctrl.frequency_x100 > 0);
+    ctrl.config.motor.nominal_speed_rpm = 1;
+    controller_update(&ctrl, &healthy, 200);
+    zassert_equal(ctrl.state, STATE_FAULT);
+    zassert_equal(ctrl.frequency_x100, 0);
+    zassert_equal(ctrl.integral, 0);
+    zassert_equal(ctrl.active_faults, FAULT_CONFIG_ERROR);
+    zassert_equal(ctrl.latched_faults, FAULT_CONFIG_ERROR);
+    zassert_equal(ctrl.active_faults, ctrl.sensor_faults | ctrl.process_faults);
+    struct controller_event event;
+    size_t count = ctrl.event_count;
+    zassert_true(count > 0);
+    zassert_true(controller_event_get(&ctrl, count - 1, &event));
+    zassert_equal(event.type, EVENT_FAULT);
+    zassert_equal(event.faults, FAULT_CONFIG_ERROR);
+    controller_update(&ctrl, &healthy, 300);
+    zassert_equal(ctrl.event_count, count);
+    zassert_equal(controller_reset(&ctrl, 300), -EBUSY);
+    ctrl.config.motor = controller_motor_defaults();
+    controller_update(&ctrl, &healthy, 400);
+    zassert_equal(ctrl.active_faults, 0);
+    zassert_equal(ctrl.state, STATE_FAULT);
+    zassert_equal(ctrl.latched_faults, FAULT_CONFIG_ERROR);
+    zassert_ok(controller_reset(&ctrl, 410));
+    zassert_equal(ctrl.state, STATE_READY);
+    zassert_equal(ctrl.frequency_x100, 0);
+}
+
+ZTEST(controller_logic, test_zero_configured_pole_pairs_is_configuration_fault)
+{
+    ctrl.config.motor.pole_pairs = 0;
+    controller_update(&ctrl, &healthy, 100);
+    zassert_equal(ctrl.state, STATE_FAULT);
+    zassert_equal(ctrl.active_faults, FAULT_CONFIG_ERROR);
+    zassert_equal(ctrl.frequency_x100, 0);
+}
+
 ZTEST(controller_logic, test_boot_requires_sample_and_start)
 {
     zassert_equal(ctrl.state, STATE_STOPPED);
