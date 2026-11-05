@@ -395,3 +395,14 @@ requirements:
     file: tests/motor/src/main.c
     suite: motor_protections
     name: test_lost_feedback_stops_instead_of_disabling_protection
+- id: REQ-MOTOR-06
+  requirement: Shell motor status показывает паспорт с единицами, motor set использует общий с FC16 API с мьютексом, валидацией всего набора и запретом записи в RUNNING/FAULT.
+  origin: project
+  acs880_topic: null
+  code:
+  - file: src/shell_cli.c
+    symbol: cmd_motor_set
+  verification:
+  - kind: scenario
+    file: scenarios/motor_shell.yaml
+    name: motor_shell_configuration_and_validation

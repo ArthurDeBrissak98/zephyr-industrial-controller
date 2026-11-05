@@ -81,6 +81,11 @@ jobs:
           python -m scripts.run_scenarios --file scenarios/motor_protections.yaml \
             --elf build/zephyr/zephyr.elf --log build/motor-protections.log
 
+      - name: Проверить Shell-настройку двигателя
+        run: |
+          python -m scripts.run_scenarios --file scenarios/motor_shell.yaml \
+            --elf build/zephyr/zephyr.elf --log build/motor-shell.log
+
       - name: Проверить отказ и повреждение flash
         run: python -m scripts.test_storage --elf build/zephyr/zephyr.elf
 
@@ -118,6 +123,7 @@ jobs:
             build/modbus-atomic.log
             build/modbus-motor.log
             build/motor-protections.log
+            build/motor-shell.log
             build/scenarios.log
             build/storage-test.log
             build-watchdog/watchdog-test.log
