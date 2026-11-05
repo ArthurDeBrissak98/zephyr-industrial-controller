@@ -57,12 +57,17 @@ static const struct named_flag fault_names[] = {
     {FAULT_WIRE_BREAK, "WIRE_BREAK"},
     {FAULT_INPUT_RANGE, "INPUT_RANGE"},
     {FAULT_INPUT_IO, "INPUT_IO"},
+    {FAULT_MOTOR_FEEDBACK, "MOTOR_FEEDBACK"},
+    {FAULT_MOTOR_OVERCURRENT, "MOTOR_OVERCURRENT"},
+    {FAULT_MOTOR_OVERFREQUENCY, "MOTOR_OVERFREQUENCY"},
     {FAULT_PROCESS_LOW, "PROCESS_LOW"},
     {FAULT_PROCESS_HIGH, "PROCESS_HIGH"},
 };
 static const struct named_flag warning_names[] = {
     {WARNING_LOW, "LOW"},
     {WARNING_HIGH, "HIGH"},
+    {WARNING_MOTOR_CURRENT, "MOTOR_CURRENT"},
+    {WARNING_MOTOR_FREQUENCY, "MOTOR_FREQUENCY"},
 };
 
 static void format_flags(char *buffer, size_t capacity, uint32_t mask,
@@ -95,7 +100,7 @@ static int cmd_status(const struct shell *sh, size_t argc, char **argv)
     shell_print(sh, "active=0x%x latched=0x%x current_ua=%d voltage_mv=%d",
                 status.active_faults, status.latched_faults,
                 status.sample.current_ua, status.sample.voltage_mv);
-    char names[96];
+    char names[192];
     format_flags(names, sizeof(names), status.sensor_faults, fault_names, ARRAY_SIZE(fault_names));
     shell_print(sh, "sensor_faults=0x%x sensor_fault_names=%s", status.sensor_faults, names);
     format_flags(names, sizeof(names), status.process_faults, fault_names, ARRAY_SIZE(fault_names));
@@ -105,6 +110,15 @@ static int cmd_status(const struct shell *sh, size_t argc, char **argv)
     shell_print(sh, "read_error=%d warnings=0x%x", status.sample.read_error, status.active_warnings);
     shell_print(sh, "frequency_x100=%d output_x100=%d",
                 status.frequency_x100, status.output_x100);
+    shell_print(sh, "motor_actual_current_ma=%d motor_actual_frequency_x100=%d motor_feedback_valid=%s motor_feedback_available=%s motor_current_injected=%s motor_frequency_injected=%s",
+                status.sample.motor.current_ma, status.sample.motor.frequency_x100,
+                status.motor_feedback_valid ? "yes" : "no", status.sample.motor.available ? "yes" : "no",
+                status.motor_current_injected ? "yes" : "no", status.motor_frequency_injected ? "yes" : "no");
+    shell_print(sh, "motor_current_warning_ma=%d motor_current_trip_ma=%d motor_frequency_warning_x100=%d motor_frequency_trip_x100=%d",
+                status.motor_protections[MOTOR_CURRENT_WARNING].threshold,
+                status.motor_protections[MOTOR_CURRENT_TRIP].threshold,
+                status.motor_protections[MOTOR_FREQUENCY_WARNING].threshold,
+                status.motor_protections[MOTOR_FREQUENCY_TRIP].threshold);
     shell_print(sh, "scaled_x10=%d measured_x10=%d signal_valid=%s",
                 status.sample.scaled_x10, status.sample.measured_x10,
                 status.signal_valid ? "yes" : "no");
@@ -135,6 +149,14 @@ static int cmd_status(const struct shell *sh, size_t argc, char **argv)
 static int cmd_inject(const struct shell *sh, size_t argc, char **argv)
 {
     ARG_UNUSED(argc);
+    if (!strcmp(argv[1], "motor-current") || !strcmp(argv[1], "motor-frequency")) {
+        bool enabled = strcmp(argv[2], "off") != 0;
+        int value = 0;
+        if (enabled && !parse_integer(argv[2], &value)) return command_result(sh, -EINVAL);
+        enum motor_feedback_channel channel = !strcmp(argv[1], "motor-current") ?
+            MOTOR_FEEDBACK_CURRENT : MOTOR_FEEDBACK_FREQUENCY;
+        return command_result(sh, controller_app_inject_motor(channel, enabled, value));
+    }
     if (!strcmp(argv[1], "signal")) {
         bool enabled = strcmp(argv[2], "off") != 0;
         int value = 0;
@@ -191,7 +213,10 @@ static int cmd_events(const struct shell *sh, size_t argc, char **argv)
                     e->sequence, (long long)e->timestamp_ms, controller_event_name(e->type),
                     controller_state_name(e->state), e->faults, e->current_ua, e->frequency_x100,
                     e->voltage_mv, e->measured_x10, e->warnings);
-        char faults[96], warnings[32];
+        shell_print(sh, "#%u motor_actual_current_ma=%d motor_actual_frequency_x100=%d motor_feedback_valid=%s motor_nominal_current_ma=%d motor_nominal_frequency_x100=%d",
+                    e->sequence, e->motor.current_ma, e->motor.frequency_x100, e->motor.valid ? "yes" : "no",
+                    e->motor_nominal_current_ma, e->motor_nominal_frequency_x100);
+        char faults[192], warnings[96];
         format_flags(faults, sizeof(faults), e->faults, fault_names, ARRAY_SIZE(fault_names));
         format_flags(warnings, sizeof(warnings), e->warnings, warning_names, ARRAY_SIZE(warning_names));
         shell_print(sh, "#%u profile=%s mode=%s signal_valid=%s fault_names=%s warning_names=%s",
@@ -222,6 +247,13 @@ static int cmd_protection_show(const struct shell *sh, size_t argc, char **argv)
         shell_print(sh, "%s enabled=%s threshold_x10=%d hysteresis_x10=%d delay_ms=%d",
                     protection_name(i), p->enabled ? "yes" : "no",
                     p->threshold_x10, p->hysteresis_x10, p->delay_ms);
+    }
+    const char *names[] = {"motor-current-warning", "motor-current-trip",
+                           "motor-frequency-warning", "motor-frequency-trip"};
+    for (int i = 0; i < MOTOR_PROTECTION_COUNT; i++) {
+        const struct protection_limit *p = &status.motor_protections[i];
+        shell_print(sh, "%s derived=yes unit=%s threshold=%d hysteresis=%d delay_ms=%d",
+                    names[i], i < 2 ? "mA" : "Hz_x100", p->threshold, p->hysteresis, p->delay_ms);
     }
     return 0;
 }
@@ -301,7 +333,7 @@ SHELL_CMD_ARG_REGISTER(start, NULL, "Пуск", cmd_start, 1, 0);
 SHELL_CMD_ARG_REGISTER(stop, NULL, "Останов", cmd_stop, 1, 0);
 SHELL_CMD_ARG_REGISTER(reset, NULL, "Сброс после устранения причины", cmd_reset, 1, 0);
 SHELL_CMD_ARG_REGISTER(status, NULL, "Состояние контроллера и выхода", cmd_status, 1, 0);
-SHELL_CMD_ARG_REGISTER(inject, NULL, "inject wire-break on|off; inject signal <value|off>", cmd_inject, 3, 0);
+SHELL_CMD_ARG_REGISTER(inject, NULL, "inject wire-break on|off; signal <value|off>; motor-current <mA|off>; motor-frequency <Hz_x100|off>", cmd_inject, 3, 0);
 SHELL_CMD_ARG_REGISTER(events, NULL, "Журнал событий", cmd_events, 1, 0);
 SHELL_CMD_REGISTER(set, &settings, "Настройки остановленного контроллера", NULL);
 

@@ -44,6 +44,8 @@ class ScenarioValidationTests(unittest.TestCase):
 
     def test_status_checks_complete_values(self):
         self.assertFalse(status_matches("active=0x10", {"active": 1}))
+        self.assertTrue(status_matches("motor_actual_current_ma=12075 motor_current_ma=11500", {
+            "motor_actual_current_ma": 12075, "motor_current_ma": 11500}))
         self.assertTrue(status_matches("state=FAULT active=0x2 output_x100=0", {
             "state": "FAULT", "active": 2, "output_x100": 0}))
         self.assertFalse(status_matches("state=READY", {"output_x100": 0}))

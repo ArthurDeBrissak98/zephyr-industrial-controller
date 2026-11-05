@@ -22,6 +22,12 @@ static void record_event(struct controller *ctrl, enum event_type type,
         .voltage_mv = ctrl->sample.voltage_mv,
         .measured_x10 = ctrl->sample.measured_x10,
         .frequency_x100 = ctrl->frequency_x100,
+        .motor = { .current_ma = ctrl->sample.motor.current_ma,
+                   .frequency_x100 = ctrl->sample.motor.frequency_x100,
+                   .valid = ctrl->motor_feedback_valid,
+                   .available = ctrl->sample.motor.available },
+        .motor_nominal_current_ma = ctrl->config.motor.nominal_current_ma,
+        .motor_nominal_frequency_x100 = ctrl->config.motor.nominal_frequency_x100,
     };
     ctrl->event_head = (ctrl->event_head + 1) % EVENT_CAPACITY;
     if (ctrl->event_count < EVENT_CAPACITY) {
@@ -29,7 +35,7 @@ static void record_event(struct controller *ctrl, enum event_type type,
     }
 }
 
-static void protection_defaults(struct controller *ctrl)
+static void process_protection_defaults(struct controller *ctrl)
 {
     bool pump = ctrl->config.profile == PROFILE_PUMP;
     ctrl->protections[PROTECTION_LOW_WARNING] =
@@ -40,6 +46,56 @@ static void protection_defaults(struct controller *ctrl)
         (struct protection_config) { pump ? 50 : 0, pump ? 20 : 10, 1000, true };
     ctrl->protections[PROTECTION_HIGH_TRIP] =
         (struct protection_config) { pump ? 950 : 380, pump ? 20 : 10, 1000, true };
+}
+
+static int motor_percent(int nominal, int percent)
+{
+    // Округляем вверх: порог не должен оказаться ниже заданного процента.
+    return (int)(((int64_t)nominal * percent + 99) / 100);
+}
+
+// REQ-MOTOR-03
+static void motor_protection_defaults(struct controller *ctrl)
+{
+    const struct motor_parameters *motor = &ctrl->config.motor;
+    int nominal[] = {motor->nominal_current_ma, motor->nominal_frequency_x100};
+    for (int channel = 0; channel < 2; channel++) {
+        ctrl->motor_protections[channel * 2] = (struct protection_limit) {
+            motor_percent(nominal[channel], 105), motor_percent(nominal[channel], 2), 500, true,
+        };
+        ctrl->motor_protections[channel * 2 + 1] = (struct protection_limit) {
+            motor_percent(nominal[channel], 110), motor_percent(nominal[channel], 2), 1000, true,
+        };
+    }
+    memset(ctrl->motor_protection_states, 0, sizeof(ctrl->motor_protection_states));
+}
+
+static void protection_defaults(struct controller *ctrl)
+{
+    process_protection_defaults(ctrl);
+    motor_protection_defaults(ctrl);
+}
+
+// REQ-MOTOR-04
+static void update_motor_protections(struct controller *ctrl, int64_t now_ms)
+{
+    for (int i = 0; i < MOTOR_PROTECTION_COUNT; i++) {
+        struct protection_state *state = &ctrl->motor_protection_states[i];
+        if (ctrl->motor_feedback_valid) {
+            int value = i < 2 ? ctrl->sample.motor.current_ma : ctrl->sample.motor.frequency_x100;
+            protection_update_limit(state, &ctrl->motor_protections[i], false, value, now_ms);
+        } else {
+            // Потеря обратной связи не сбрасывает уже активную моторную защиту.
+            state->pending = false;
+        }
+        if (!state->active) continue;
+        switch (i) {
+        case MOTOR_CURRENT_WARNING: ctrl->active_warnings |= WARNING_MOTOR_CURRENT; break;
+        case MOTOR_CURRENT_TRIP: ctrl->process_faults |= FAULT_MOTOR_OVERCURRENT; break;
+        case MOTOR_FREQUENCY_WARNING: ctrl->active_warnings |= WARNING_MOTOR_FREQUENCY; break;
+        case MOTOR_FREQUENCY_TRIP: ctrl->process_faults |= FAULT_MOTOR_OVERFREQUENCY; break;
+        }
+    }
 }
 
 // REQ-PROT-02
@@ -66,6 +122,7 @@ static void update_protections(struct controller *ctrl, int64_t now_ms)
         case PROTECTION_HIGH_TRIP: ctrl->process_faults |= FAULT_PROCESS_HIGH; break;
         }
     }
+    update_motor_protections(ctrl, now_ms);
     uint32_t added = ctrl->active_warnings & ~previous_warnings;
     uint32_t cleared = previous_warnings & ~ctrl->active_warnings;
     if (added) record_event(ctrl, EVENT_WARNING, 0, added, now_ms);
@@ -186,6 +243,7 @@ static void update_pi(struct controller *ctrl, int64_t dt_ms)
 }
 
 // REQ-SENS-02
+// REQ-MOTOR-05
 static void controller_update_locked(struct controller *ctrl, const struct sensor_sample *sample,
                        int64_t now_ms)
 {
@@ -213,6 +271,10 @@ static void controller_update_locked(struct controller *ctrl, const struct senso
     ctrl->sample.measured_x10 = signal.filtered_x10;
     ctrl->sample_valid = signal.faults == FAULT_NONE;
     ctrl->sensor_faults = signal.faults;
+    ctrl->motor_feedback_seen |= sample->motor.available || sample->motor.valid;
+    ctrl->motor_feedback_valid = sample->motor.available && sample->motor.valid && sample->motor.current_ma >= 0 &&
+                                 sample->motor.frequency_x100 >= 0;
+    if (ctrl->motor_feedback_seen && !ctrl->motor_feedback_valid) ctrl->sensor_faults |= FAULT_MOTOR_FEEDBACK;
     update_protections(ctrl, now_ms);
     ctrl->active_faults = ctrl->sensor_faults | ctrl->process_faults;
 
@@ -288,7 +350,8 @@ static int controller_configure_locked(struct controller *ctrl, struct controlle
     }
     bool profile_changed = ctrl->config.profile != config.profile;
     ctrl->config = config;
-    if (profile_changed) protection_defaults(ctrl);
+    if (profile_changed) process_protection_defaults(ctrl);
+    motor_protection_defaults(ctrl);
     memset(ctrl->protection_states, 0, sizeof(ctrl->protection_states));
     ctrl->active_warnings = 0;
     ctrl->sample_valid = false;
@@ -351,6 +414,7 @@ const char *controller_event_name(enum event_type type)
     case EVENT_WARNING_CLEARED: return "WARNING_CLEARED";
     case EVENT_PROTECTION_CHANGED: return "PROTECTION_CHANGED";
     case EVENT_SETTINGS_LOADED: return "SETTINGS_LOADED";
+    case EVENT_MOTOR_CHANGED: return "MOTOR_CHANGED";
     case EVENT_READY: return "READY";
     case EVENT_START: return "START";
     case EVENT_STOP: return "STOP";
@@ -449,4 +513,21 @@ void controller_events_clear(struct controller *ctrl)
     ctrl->event_count = 0;
     // Нумерацию продолжаем, чтобы новые записи не путались со старой выгрузкой.
     k_mutex_unlock(&ctrl->mutex);
+}
+
+int controller_motor_configure(struct controller *ctrl, struct motor_parameters motor, int64_t now_ms)
+{
+    k_mutex_lock(&ctrl->mutex, K_FOREVER);
+    int ret = controller_motor_validate(&motor);
+    if (!ret && ctrl->state != STATE_STOPPED && ctrl->state != STATE_READY) ret = -EBUSY;
+    if (!ret) {
+        uint32_t cleared = ctrl->active_warnings & MOTOR_WARNING_MASK;
+        ctrl->config.motor = motor;
+        motor_protection_defaults(ctrl);
+        ctrl->active_warnings &= ~MOTOR_WARNING_MASK;
+        if (cleared) record_event(ctrl, EVENT_WARNING_CLEARED, 0, cleared, now_ms);
+        record_event(ctrl, EVENT_MOTOR_CHANGED, 0, ctrl->active_warnings, now_ms);
+    }
+    k_mutex_unlock(&ctrl->mutex);
+    return ret;
 }

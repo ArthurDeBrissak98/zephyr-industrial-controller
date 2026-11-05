@@ -1,9 +1,8 @@
 #include "protection.h"
 #include <string.h>
 
-// REQ-PROT-01
-bool protection_update(struct protection_state *state, const struct protection_config *config,
-                       bool low_limit, int value_x10, int64_t now_ms)
+bool protection_update_limit(struct protection_state *state, const struct protection_limit *config,
+                             bool low_limit, int value, int64_t now_ms)
 {
     if (!config->enabled) {
         memset(state, 0, sizeof(*state));
@@ -11,18 +10,18 @@ bool protection_update(struct protection_state *state, const struct protection_c
     }
 
     if (state->active) {
-        int64_t clear_limit = (int64_t)config->threshold_x10 +
-            (low_limit ? config->hysteresis_x10 : -(int64_t)config->hysteresis_x10);
-        bool recovered = low_limit ? value_x10 >= clear_limit : value_x10 <= clear_limit;
-        if (config->hysteresis_x10 == 0) {
-            recovered = low_limit ? value_x10 > clear_limit : value_x10 < clear_limit;
+        int64_t clear_limit = (int64_t)config->threshold +
+            (low_limit ? config->hysteresis : -(int64_t)config->hysteresis);
+        bool recovered = low_limit ? value >= clear_limit : value <= clear_limit;
+        if (config->hysteresis == 0) {
+            recovered = low_limit ? value > clear_limit : value < clear_limit;
         }
         if (recovered) state->active = false;
         return state->active;
     }
 
-    bool exceeded = low_limit ? value_x10 <= config->threshold_x10 :
-                                value_x10 >= config->threshold_x10;
+    bool exceeded = low_limit ? value <= config->threshold :
+                                value >= config->threshold;
     if (!exceeded) {
         state->pending = false;
         return false;
@@ -36,6 +35,17 @@ bool protection_update(struct protection_state *state, const struct protection_c
         state->pending = false;
     }
     return state->active;
+}
+
+// REQ-PROT-01
+bool protection_update(struct protection_state *state, const struct protection_config *config,
+                       bool low_limit, int value_x10, int64_t now_ms)
+{
+    const struct protection_limit limit = {
+        .threshold = config->threshold_x10, .hysteresis = config->hysteresis_x10,
+        .delay_ms = config->delay_ms, .enabled = config->enabled,
+    };
+    return protection_update_limit(state, &limit, low_limit, value_x10, now_ms);
 }
 
 const char *protection_name(enum protection_id id)

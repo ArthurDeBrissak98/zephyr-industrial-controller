@@ -12,5 +12,6 @@ void controller_io_write(int frequency_x100);
 int controller_io_inject_wire_break(bool enabled);
 int controller_io_inject_signal(bool enabled, int value);
 int controller_io_output(void);
+int controller_io_inject_motor(enum motor_feedback_channel channel, bool enabled, int value);
 
 #endif

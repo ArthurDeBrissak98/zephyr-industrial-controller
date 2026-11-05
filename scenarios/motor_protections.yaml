@@ -1,0 +1,60 @@
+version: 1
+scenarios:
+  - name: motor_current_warning_trip_and_manual_reset
+    steps:
+      - status: {state: READY, motor_feedback_valid: "yes", motor_current_warning_ma: 12075, motor_current_trip_ma: 12650}
+      - command: start
+        expect: [OK]
+      - command: inject motor-current 12075
+        expect: [OK]
+      - status: {state: RUNNING, active: 0, warnings: 4, motor_actual_current_ma: 12075, warning_names: MOTOR_CURRENT}
+      - command: inject motor-current off
+        expect: [OK]
+      - status: {state: RUNNING, active: 0, warnings: 0}
+      - command: inject motor-current 12650
+        expect: [OK]
+      - status: {state: FAULT, active: 32, process_faults: 32, sensor_faults: 0, latched: 32, output_x100: 0, active_names: MOTOR_OVERCURRENT}
+      - modbus_read: {address: 0, count: 3, expect: [3, 32, 4]}
+      - command: events
+        expect: ["fault_names=MOTOR_OVERCURRENT", "motor_actual_current_ma=12650", "motor_nominal_current_ma=11500"]
+      - command: reset
+        expect: ["Команда отклонена: -16"]
+      - command: inject motor-current off
+        expect: [OK]
+      - status: {state: FAULT, active: 0, latched: 32, output_x100: 0}
+      - command: reset
+        expect: [OK]
+      - status: {state: READY, active: 0, latched: 0, output_x100: 0}
+      - command: inject motor-current -1
+        expect: ["Команда отклонена: -22"]
+
+  - name: motor_frequency_trip_uses_updated_nvs_rating
+    steps:
+      - status: {state: READY}
+      - modbus_write_multiple: {address: 10, values: [230, 15000, 6000, 1750, 2], expect_exception: 0}
+      - status: {motor_current_warning_ma: 15750, motor_current_trip_ma: 16500, motor_frequency_warning_x100: 6300, motor_frequency_trip_x100: 6600}
+      - command: config save
+        expect: [OK]
+      - restart: true
+      - status: {state: READY, settings_present: "yes", output_x100: 0, motor_frequency_warning_x100: 6300, motor_frequency_trip_x100: 6600}
+      - command: protect show
+        expect: ["motor-frequency-trip derived=yes unit=Hz_x100 threshold=6600 hysteresis=120 delay_ms=1000"]
+      - command: start
+        expect: [OK]
+      - command: inject motor-frequency 6300
+        expect: [OK]
+      - status: {state: RUNNING, active: 0, warnings: 8, motor_actual_frequency_x100: 6300, warning_names: MOTOR_FREQUENCY}
+      - command: inject motor-frequency 6600
+        expect: [OK]
+      - status: {state: FAULT, active: 64, process_faults: 64, latched: 64, output_x100: 0, motor_actual_frequency_x100: 6600, active_names: MOTOR_OVERFREQUENCY}
+      - modbus_read: {address: 0, count: 3, expect: [3, 64, 8]}
+      - command: events
+        expect: ["fault_names=MOTOR_OVERFREQUENCY", "motor_actual_frequency_x100=6600", "motor_nominal_frequency_x100=6000"]
+      - command: reset
+        expect: ["Команда отклонена: -16"]
+      - command: inject motor-frequency off
+        expect: [OK]
+      - status: {state: FAULT, active: 0, latched: 64}
+      - command: reset
+        expect: [OK]
+      - status: {state: READY, active: 0, latched: 0, output_x100: 0}

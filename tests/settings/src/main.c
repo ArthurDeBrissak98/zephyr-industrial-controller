@@ -145,4 +145,17 @@ ZTEST(settings_tests, test_invalid_motor_with_valid_crc_is_rejected)
     zassert_equal(ctrl.config.motor.nominal_speed_rpm, 1450);
 }
 
+ZTEST(settings_tests, test_settings_apply_recomputes_motor_limits)
+{
+    parameters.config.motor.nominal_current_ma = 15000;
+    parameters.config.motor.nominal_frequency_x100 = 6000;
+    parameters.protections[PROTECTION_HIGH_WARNING].threshold_x10 = 920;
+    zassert_ok(controller_parameters_apply(&ctrl, &parameters, 100));
+    zassert_equal(ctrl.motor_protections[MOTOR_CURRENT_WARNING].threshold, 15750);
+    zassert_equal(ctrl.motor_protections[MOTOR_CURRENT_TRIP].threshold, 16500);
+    zassert_equal(ctrl.motor_protections[MOTOR_FREQUENCY_WARNING].threshold, 6300);
+    zassert_equal(ctrl.motor_protections[MOTOR_FREQUENCY_TRIP].threshold, 6600);
+    zassert_equal(ctrl.protections[PROTECTION_HIGH_WARNING].threshold_x10, 920);
+}
+
 ZTEST_SUITE(settings_tests, NULL, NULL, before, NULL, NULL);
