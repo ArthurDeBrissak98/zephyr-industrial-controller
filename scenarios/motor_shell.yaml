@@ -1,0 +1,63 @@
+version: 1
+scenarios:
+  - name: motor_shell_configuration_and_validation
+    steps:
+      - status: {state: READY}
+      - command: motor status
+        expect: ["Паспорт двигателя (state=READY)", "nominal_voltage_v=400 В", "nominal_current_ma=11500 мА (11.500 А)", "nominal_frequency_x100=5000 (50.00 Гц)", "nominal_speed_rpm=1450 об/мин", "pole_pairs=2 (число пар полюсов)"]
+      - command: motor set nominal_voltage_v 230
+        expect: [OK]
+      - command: motor set nominal_current_ma 15000
+        expect: [OK]
+      - command: motor set nominal_frequency_x100 6000
+        expect: [OK]
+      - command: motor set nominal_speed_rpm 1750
+        expect: [OK]
+      - command: motor set pole_pairs 1
+        expect: [OK]
+      - command: motor set pole_pairs 2
+        expect: [OK]
+      - command: motor status
+        expect: ["nominal_voltage_v=230 В", "nominal_current_ma=15000 мА (15.000 А)", "nominal_frequency_x100=6000 (60.00 Гц)", "nominal_speed_rpm=1750 об/мин", "pole_pairs=2 (число пар полюсов)"]
+      - modbus_read: {address: 10, count: 5, expect: [230, 15000, 6000, 1750, 2]}
+      - status: {motor_current_warning_ma: 15750, motor_current_trip_ma: 16500, motor_frequency_warning_x100: 6300, motor_frequency_trip_x100: 6600}
+      - command: motor set nominal_current_ma 0
+        expect: ["Команда отклонена: -22"]
+      - command: motor set nominal_current_ma -1
+        expect: ["Команда отклонена: -22"]
+      - command: motor set nominal_voltage_v 65536
+        expect: ["Команда отклонена: -22"]
+      - command: motor set nominal_voltage_v 999999999999999999999999
+        expect: ["Команда отклонена: -22"]
+      - command: motor set nominal_current_ma 12.5
+        expect: ["Команда отклонена: -22"]
+      - command: motor set unknown 400
+        expect: ["Команда отклонена: -22"]
+      # 1750 об/мин несовместимы с 50 Гц и двумя парами полюсов.
+      - command: motor set nominal_frequency_x100 5000
+        expect: ["Команда отклонена: -22"]
+      - command: motor set pole_pairs 3
+        expect: ["Команда отклонена: -22"]
+      - modbus_read: {address: 10, count: 5, expect: [230, 15000, 6000, 1750, 2]}
+      - command: start
+        expect: [OK]
+      - command: motor status
+        expect: ["Паспорт двигателя (state=RUNNING)", "nominal_voltage_v=230 В"]
+      - command: motor set nominal_voltage_v 400
+        expect: ["Команда отклонена: -16"]
+      - command: stop
+        expect: [OK]
+      - command: config save
+        expect: [OK]
+      - restart: true
+      - status: {state: READY, settings_present: "yes", output_x100: 0}
+      - command: motor status
+        expect: ["nominal_voltage_v=230 В", "nominal_current_ma=15000 мА (15.000 А)", "nominal_frequency_x100=6000 (60.00 Гц)", "nominal_speed_rpm=1750 об/мин", "pole_pairs=2 (число пар полюсов)"]
+      - command: inject wire-break on
+        expect: [OK]
+      - status: {state: FAULT, active: 1}
+      - command: motor set nominal_voltage_v 400
+        expect: ["Команда отклонена: -16"]
+      - command: motor status
+        expect: ["Паспорт двигателя (state=FAULT)", "nominal_voltage_v=230 В"]
+      - modbus_read: {address: 10, count: 5, expect: [230, 15000, 6000, 1750, 2]}

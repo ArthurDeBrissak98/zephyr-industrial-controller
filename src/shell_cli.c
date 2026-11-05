@@ -381,3 +381,49 @@ SHELL_STATIC_SUBCMD_SET_CREATE(fault_commands,
     SHELL_CMD_ARG(clear_history, NULL, "Очистить журнал событий", cmd_faults_clear_history, 1, 0),
     SHELL_SUBCMD_SET_END);
 SHELL_CMD_REGISTER(faults, &fault_commands, "Журнал аварий и событий", NULL);
+
+static int cmd_motor_status(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+    struct controller_status status;
+    controller_app_status(&status);
+    const struct motor_parameters *motor = &status.config.motor;
+    shell_print(sh, "Паспорт двигателя (state=%s)", controller_state_name(status.state));
+    shell_print(sh, "nominal_voltage_v=%d В", motor->nominal_voltage_v);
+    shell_print(sh, "nominal_current_ma=%d мА (%d.%03d А)", motor->nominal_current_ma,
+                motor->nominal_current_ma / 1000, motor->nominal_current_ma % 1000);
+    shell_print(sh, "nominal_frequency_x100=%d (%d.%02d Гц)", motor->nominal_frequency_x100,
+                motor->nominal_frequency_x100 / 100, motor->nominal_frequency_x100 % 100);
+    shell_print(sh, "nominal_speed_rpm=%d об/мин", motor->nominal_speed_rpm);
+    shell_print(sh, "pole_pairs=%d (число пар полюсов)", motor->pole_pairs);
+    return 0;
+}
+
+// REQ-MOTOR-06
+static int cmd_motor_set(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc);
+    static const char *const names[] = {
+        "nominal_voltage_v", "nominal_current_ma", "nominal_frequency_x100",
+        "nominal_speed_rpm", "pole_pairs",
+    };
+    int value;
+    if (!parse_integer(argv[2], &value) || value <= 0 || value > UINT16_MAX) {
+        return command_result(sh, -EINVAL);
+    }
+    for (size_t i = 0; i < ARRAY_SIZE(names); i++) {
+        if (strcmp(argv[1], names[i])) continue;
+        uint16_t raw = value;
+        // Общий API с Modbus проверяет весь кандидат и применяет его под мьютексом.
+        return command_result(sh, controller_app_motor_configure(i, &raw, 1));
+    }
+    return command_result(sh, -EINVAL);
+}
+
+SHELL_STATIC_SUBCMD_SET_CREATE(motor_commands,
+    SHELL_CMD_ARG(status, NULL, "Паспорт двигателя и единицы измерения", cmd_motor_status, 1, 0),
+    SHELL_CMD_ARG(set, NULL, "<nominal_voltage_v|nominal_current_ma|nominal_frequency_x100|nominal_speed_rpm|pole_pairs> <целое значение>",
+                  cmd_motor_set, 3, 0),
+    SHELL_SUBCMD_SET_END);
+SHELL_CMD_REGISTER(motor, &motor_commands, "Параметры двигателя", NULL);
