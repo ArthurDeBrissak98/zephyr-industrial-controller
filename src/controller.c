@@ -129,6 +129,19 @@ static void update_protections(struct controller *ctrl, int64_t now_ms)
     if (cleared) record_event(ctrl, EVENT_WARNING_CLEARED, 0, cleared, now_ms);
 }
 
+uint32_t calculate_pole_pairs(uint32_t nominal_freq_x100, uint32_t nominal_speed_rpm)
+{
+    if (nominal_speed_rpm < 50 || nominal_speed_rpm > 30000 ||
+        nominal_freq_x100 < 100 || nominal_freq_x100 > 50000) return 0;
+
+    // Сохраняем сотые доли герца; промежуточные произведения могут не влезть в uint32_t.
+    uint64_t numerator = (uint64_t)60 * nominal_freq_x100;
+    uint64_t denominator = (uint64_t)100 * nominal_speed_rpm;
+    uint32_t pole_pairs_calc = (uint32_t)((numerator + denominator / 2) / denominator);
+
+    return pole_pairs_calc >= 1 && pole_pairs_calc <= 100 ? pole_pairs_calc : 0;
+}
+
 // REQ-MOTOR-02
 int controller_motor_validate(const struct motor_parameters *motor)
 {
@@ -137,6 +150,8 @@ int controller_motor_validate(const struct motor_parameters *motor)
         motor->nominal_frequency_x100 <= 0 || motor->nominal_frequency_x100 > UINT16_MAX ||
         motor->nominal_speed_rpm <= 0 || motor->nominal_speed_rpm > UINT16_MAX ||
         motor->pole_pairs <= 0 || motor->pole_pairs > UINT16_MAX) return -EINVAL;
+    if (calculate_pole_pairs(motor->nominal_frequency_x100, motor->nominal_speed_rpm) == 0)
+        return -EINVAL;
     // Номинальные обороты не могут превышать синхронную скорость поля.
     int64_t speed = (int64_t)motor->nominal_speed_rpm * motor->pole_pairs * 100;
     return speed <= (int64_t)motor->nominal_frequency_x100 * 60 ? 0 : -EINVAL;

@@ -5,12 +5,14 @@ scenarios:
       - status: {state: READY}
       - modbus_read: {address: 10, count: 5, expect: [400, 11500, 5000, 1450, 2]}
       # Нулевой ток должен отклонить весь пакет, включая новое напряжение.
-      - modbus_write_multiple: {address: 10, values: [230, 0, 6000, 1750, 2], expect_exception: 2}
+      - modbus_write_multiple: {address: 10, values: [230, 0, 6000, 1750, 2], expect_exception: 3}
       - modbus_read: {address: 10, count: 5, expect: [400, 11500, 5000, 1450, 2]}
-      - modbus_write_multiple: {address: 14, values: [0], expect_exception: 2}
+      - modbus_write_multiple: {address: 14, values: [0], expect_exception: 3}
+      - modbus_write_multiple: {address: 10, values: [230, 15000, 5000, 1, 2], expect_exception: 3}
+      - modbus_read: {address: 10, count: 5, expect: [400, 11500, 5000, 1450, 2]}
       - modbus_read: {address: 14, count: 1, expect: [2]}
       # 1450 об/мин при 40 Гц и двух парах полюсов невозможно.
-      - modbus_write_multiple: {address: 12, values: [4000], expect_exception: 2}
+      - modbus_write_multiple: {address: 12, values: [4000], expect_exception: 3}
       - modbus_read: {address: 12, count: 2, expect: [5000, 1450]}
       # Итоговая пара согласована, хотя отдельная запись частоты была невалидна.
       - modbus_write_multiple: {address: 12, values: [4000, 1150], expect_exception: 0}

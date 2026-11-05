@@ -104,6 +104,7 @@ uint8_t controller_modbus_fc16(const uint8_t *request, size_t size,
     // проверяются под мьютексом, затем применяются одной операцией.
     int ret = setpoint ? controller_app_setpoint_set((int16_t)values[0]) :
         controller_app_motor_configure(address - CONTROLLER_MODBUS_MOTOR_FIRST, values, count);
+    if (!setpoint && ret == -EINVAL) return 3;
     if (ret) return 2;
     sys_put_be16(address, response);
     sys_put_be16(count, response + 2);
