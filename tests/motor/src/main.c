@@ -141,6 +141,7 @@ ZTEST(motor_protections, test_threshold_arithmetic_exceeds_uint16_without_overfl
     struct motor_parameters motor = ctrl.config.motor;
     motor.nominal_current_ma = 65535;
     motor.nominal_frequency_x100 = 50000;
+    motor.nominal_speed_rpm = 14500;
     zassert_ok(controller_motor_configure(&ctrl, motor, 1));
     zassert_equal(ctrl.motor_protections[MOTOR_CURRENT_TRIP].threshold, 72089);
     zassert_equal(ctrl.motor_protections[MOTOR_FREQUENCY_TRIP].threshold, 55000);

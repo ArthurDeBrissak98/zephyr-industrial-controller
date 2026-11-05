@@ -100,6 +100,49 @@ ZTEST(controller_logic, test_zero_configured_pole_pairs_is_configuration_fault)
     zassert_equal(ctrl.frequency_x100, 0);
 }
 
+ZTEST(controller_logic, test_sync_speed_and_slip_defaults_and_boundaries)
+{
+    zassert_equal(ctrl.motor.pole_pairs_calc, 2);
+    zassert_equal(ctrl.motor.sync_speed_rpm, 1500);
+    zassert_equal(ctrl.motor.slip_x1000, 33);
+    ctrl.config.motor.nominal_speed_rpm = 1200;
+    zassert_ok(calculate_sync_speed_and_slip(&ctrl));
+    zassert_equal(ctrl.motor.slip_x1000, 200);
+    struct motor_data previous = ctrl.motor;
+    ctrl.config.motor.nominal_speed_rpm = 1198;
+    zassert_equal(calculate_sync_speed_and_slip(&ctrl), -EINVAL);
+    zassert_mem_equal(&ctrl.motor, &previous, sizeof(previous));
+    ctrl.config.motor.nominal_speed_rpm = 1501;
+    zassert_equal(calculate_sync_speed_and_slip(&ctrl), -EINVAL);
+    ctrl.config.motor.nominal_speed_rpm = 1500;
+    zassert_ok(calculate_sync_speed_and_slip(&ctrl));
+    zassert_equal(ctrl.motor.slip_x1000, 0);
+    ctrl.motor.pole_pairs_calc = 0;
+    zassert_equal(calculate_sync_speed_and_slip(&ctrl), -EINVAL);
+    controller_update(&ctrl, &healthy, 100);
+    zassert_equal(ctrl.active_faults, FAULT_CONFIG_ERROR);
+}
+
+ZTEST(controller_logic, test_motor_derived_data_updates_atomically)
+{
+    struct controller_config candidate = ctrl.config;
+    candidate.motor.nominal_frequency_x100 = 6000;
+    candidate.motor.nominal_speed_rpm = 1750;
+    zassert_ok(controller_configure(&ctrl, candidate, 100));
+    zassert_equal(ctrl.motor.sync_speed_rpm, 1800);
+    zassert_equal(ctrl.motor.slip_x1000, 27);
+    struct motor_data previous = ctrl.motor;
+    candidate.motor.nominal_speed_rpm = 1400;
+    zassert_equal(controller_configure(&ctrl, candidate, 200), -EINVAL);
+    zassert_mem_equal(&ctrl.motor, &previous, sizeof(previous));
+    zassert_equal(ctrl.config.motor.nominal_speed_rpm, 1750);
+    candidate.motor.nominal_frequency_x100 = 5000;
+    candidate.motor.nominal_speed_rpm = 1450;
+    zassert_ok(controller_motor_configure(&ctrl, candidate.motor, 300));
+    zassert_equal(ctrl.motor.sync_speed_rpm, 1500);
+    zassert_equal(ctrl.motor.slip_x1000, 33);
+}
+
 ZTEST(controller_logic, test_boot_requires_sample_and_start)
 {
     zassert_equal(ctrl.state, STATE_STOPPED);
