@@ -66,6 +66,11 @@ jobs:
           python -m scripts.run_scenarios --file scenarios/modbus_read_state.yaml \
             --elf build/zephyr/zephyr.elf --log build/modbus-scenario.log
 
+      - name: Проверить атомарность FC16 через YAML
+        run: |
+          python -m scripts.run_scenarios --file scenarios/modbus_atomic_write.yaml \
+            --elf build/zephyr/zephyr.elf --log build/modbus-atomic.log
+
       - name: Проверить отказ и повреждение flash
         run: python -m scripts.test_storage --elf build/zephyr/zephyr.elf
 
@@ -100,6 +105,7 @@ jobs:
             build/demo-test.log
             build/modbus-test.log
             build/modbus-scenario.log
+            build/modbus-atomic.log
             build/scenarios.log
             build/storage-test.log
             build-watchdog/watchdog-test.log

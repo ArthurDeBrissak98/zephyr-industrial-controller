@@ -263,3 +263,34 @@ requirements:
     file: tests/modbus/src/main.c
     suite: modbus_map
     name: test_fault_state_is_visible_and_writes_do_not_reset_it
+- id: REQ-MBUS-03
+  requirement: FC03 формирует весь ответ из одного локального снимка состояния.
+  origin: project
+  acs880_topic: null
+  code:
+  - file: src/controller_modbus.c
+    symbol: controller_modbus_fc03
+  verification:
+  - kind: ztest
+    file: tests/modbus/src/main.c
+    suite: modbus_map
+    name: test_fc03_stays_consistent_during_fault_transitions
+  - kind: ztest
+    file: tests/modbus/src/main.c
+    suite: modbus_map
+    name: test_fc03_encodes_one_snapshot_and_validates_range
+- id: REQ-MBUS-04
+  requirement: Отклонённый FC16 не меняет уставку; допустимая запись применяется под мьютексом.
+  origin: project
+  acs880_topic: null
+  code:
+  - file: src/controller_modbus.c
+    symbol: controller_modbus_fc16
+  verification:
+  - kind: ztest
+    file: tests/modbus/src/main.c
+    suite: modbus_map
+    name: test_fc16_rejects_entire_request_before_commit
+  - kind: scenario
+    file: scenarios/modbus_atomic_write.yaml
+    name: modbus_fc16_rejection_preserves_setpoint

@@ -1,0 +1,17 @@
+version: 1
+scenarios:
+  - name: modbus_fc16_rejection_preserves_setpoint
+    steps:
+      - status: {state: READY, profile: pump, active: 0}
+      - modbus_read: {address: 0, count: 5, expect: [1, 0, 0, 500, 500]}
+      # Первый регистр существует, второй нет. Весь запрос должен быть отклонён.
+      - modbus_write_multiple: {address: 4, values: [600, 1], expect_exception: 2}
+      - modbus_read: {address: 0, count: 5, expect: [1, 0, 0, 500, 500]}
+      - modbus_write_multiple: {address: 3, values: [0, 700], expect_exception: 2}
+      - modbus_read: {address: 4, count: 1, expect: [500]}
+      - modbus_write_multiple: {address: 4, values: [1001], expect_exception: 2}
+      - modbus_read: {address: 4, count: 1, expect: [500]}
+      - modbus_write_multiple: {address: 65535, values: [1, 700], expect_exception: 2}
+      - modbus_read: {address: 4, count: 1, expect: [500]}
+      - modbus_write_multiple: {address: 4, values: [650], expect_exception: 0}
+      - modbus_read: {address: 0, count: 5, expect: [1, 0, 0, 500, 650]}

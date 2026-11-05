@@ -77,7 +77,8 @@ int controller_app_setpoint_set(int value)
     k_mutex_lock(&controller.mutex, K_FOREVER);
     bool pump = controller.config.profile == PROFILE_PUMP;
     int ret = 0;
-    if (value < (pump ? 0 : -200) || value > (pump ? 1000 : 400)) {
+    if ((unsigned int)controller.state > STATE_FAULT ||
+        value < (pump ? 0 : -200) || value > (pump ? 1000 : 400)) {
         ret = -EINVAL;
     } else {
         setpoint_x10 = value;

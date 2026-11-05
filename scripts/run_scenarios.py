@@ -55,7 +55,7 @@ def load_scenarios(path):
 def validate_step(step):
     if not isinstance(step, dict):
         raise ValueError("Шаг должен быть словарём")
-    actions = set(step) & {"command", "status", "wait_ms", "restart", "corrupt_settings_crc", "modbus_read"}
+    actions = set(step) & {"command", "status", "wait_ms", "restart", "corrupt_settings_crc", "modbus_read", "modbus_write_multiple"}
     if len(actions) != 1:
         raise ValueError("В шаге должно быть ровно одно действие")
     action = next(iter(actions))
@@ -92,6 +92,18 @@ def validate_step(step):
         if (not isinstance(expected, list) or len(expected) != count
                 or any(type(x) is not int or not 0 <= x <= 65535 for x in expected)):
             raise ValueError("modbus_read: expect должен содержать count чисел uint16")
+    elif action == "modbus_write_multiple":
+        request = step[action]
+        if not isinstance(request, dict) or set(request) != {"address", "values", "expect_exception"}:
+            raise ValueError("modbus_write_multiple требует address, values, expect_exception")
+        if type(request["address"]) is not int or not 0 <= request["address"] <= 65535:
+            raise ValueError("FC16: некорректный адрес")
+        values = request["values"]
+        if (not isinstance(values, list) or not 1 <= len(values) <= 123
+                or any(type(x) is not int or not 0 <= x <= 65535 for x in values)):
+            raise ValueError("FC16: нужен список из 1–123 значений uint16")
+        if type(request["expect_exception"]) is not int or request["expect_exception"] not in (0, 1, 2, 3, 4):
+            raise ValueError("FC16: некорректное исключение")
     elif action == "wait_ms":
         if type(step["wait_ms"]) is not int or not 0 <= step["wait_ms"] <= 5000:
             raise ValueError("wait_ms должен быть от 0 до 5000")
@@ -139,7 +151,7 @@ def corrupt_settings_crc(storage):
 def run_scenario(scenario, elf, qemu, log):
     console = None
     modbus = None
-    uses_modbus = any("modbus_read" in step for step in scenario["steps"])
+    uses_modbus = any("modbus_read" in step or "modbus_write_multiple" in step for step in scenario["steps"])
     log.append(f"SCENARIO {scenario['name']}")
     with tempfile.TemporaryDirectory(prefix="controller-scenario-") as storage:
         socket_path = Path(storage, "modbus.sock")
@@ -179,6 +191,9 @@ def run_scenario(scenario, elf, qemu, log):
                     actual = modbus.read(request["address"], request["count"])
                     if actual != tuple(request["expect"]):
                         raise AssertionError(f"Modbus: ожидали {request['expect']}, получили {list(actual)}")
+                elif "modbus_write_multiple" in step:
+                    request = step["modbus_write_multiple"]
+                    modbus.write_multiple(request["address"], request["values"], request["expect_exception"])
                 elif "wait_ms" in step:
                     time.sleep(step["wait_ms"] / 1000)
                 else:
