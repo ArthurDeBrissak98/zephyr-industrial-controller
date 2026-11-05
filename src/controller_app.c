@@ -91,6 +91,37 @@ int controller_app_setpoint_set(int value)
     return ret;
 }
 
+// REQ-MBUS-05
+int controller_app_motor_configure(unsigned int first, const uint16_t *values, size_t count)
+{
+    if (!values || !count || first >= 5 || count > 5 - first) return -EINVAL;
+    k_mutex_lock(&controller_lock, K_FOREVER);
+    k_mutex_lock(&controller.mutex, K_FOREVER);
+    int ret = 0;
+    if (controller.state != STATE_STOPPED && controller.state != STATE_READY) {
+        ret = -EBUSY;
+        goto out;
+    }
+    // Фаза 1: проверить итоговый набор, включая поля, которых нет в запросе.
+    struct motor_parameters candidate = controller.config.motor;
+    for (size_t i = 0; i < count; i++) {
+        switch (first + i) {
+        case 0: candidate.nominal_voltage_v = values[i]; break;
+        case 1: candidate.nominal_current_ma = values[i]; break;
+        case 2: candidate.nominal_frequency_x100 = values[i]; break;
+        case 3: candidate.nominal_speed_rpm = values[i]; break;
+        case 4: candidate.pole_pairs = values[i]; break;
+        }
+    }
+    ret = controller_motor_validate(&candidate);
+    // Фаза 2: единая запись под теми же замками, без промежуточного состояния.
+    if (!ret) controller.config.motor = candidate;
+out:
+    k_mutex_unlock(&controller.mutex);
+    k_mutex_unlock(&controller_lock);
+    return ret;
+}
+
 int controller_app_start(void)
 {
     k_mutex_lock(&controller_lock, K_FOREVER);
