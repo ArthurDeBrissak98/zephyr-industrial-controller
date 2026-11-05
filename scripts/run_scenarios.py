@@ -88,8 +88,9 @@ def validate_step(step):
             raise ValueError("modbus_read требует address, count и expect")
         address, count, expected = request["address"], request["count"], request["expect"]
         if (type(address) is not int or type(count) is not int
-                or not 0 <= address < 5 or not 1 <= count <= 5 or address + count > 5):
-            raise ValueError("modbus_read: запрос выходит за карту регистров 0–4")
+                or not 1 <= count <= 5 or not (0 <= address < 5 and address + count <= 5
+                    or 10 <= address < 15 and address + count <= 15)):
+            raise ValueError("modbus_read: запрос выходит за блоки регистров 0–4 и 10–14")
         if (not isinstance(expected, list) or len(expected) != count
                 or any(type(x) is not int or not 0 <= x <= 65535 for x in expected)):
             raise ValueError("modbus_read: expect должен содержать count чисел uint16")

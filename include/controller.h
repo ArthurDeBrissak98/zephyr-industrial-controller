@@ -93,6 +93,7 @@ struct controller {
 };
 
 // Инициализация до запуска потоков. Остальные операции с контроллером — не из ISR.
+int controller_motor_validate(const struct motor_parameters *motor);
 struct motor_parameters controller_motor_defaults(void);
 void controller_init(struct controller *ctrl);
 void controller_update(struct controller *ctrl, const struct sensor_sample *sample,

@@ -314,3 +314,38 @@ requirements:
     file: tests/settings/src/main.c
     suite: settings_tests
     name: test_legacy_settings_add_default_motor_parameters
+- id: REQ-MOTOR-02
+  requirement: Параметры двигателя положительны, помещаются в uint16, а номинальная скорость не выше синхронной при заданной частоте и числе пар полюсов.
+  origin: project
+  acs880_topic: null
+  code:
+  - file: src/controller.c
+    symbol: controller_motor_validate
+  verification:
+  - kind: ztest
+    file: tests/modbus/src/main.c
+    suite: modbus_map
+    name: test_motor_validation_rejects_zero_overflow_and_excess_speed
+  - kind: ztest
+    file: tests/settings/src/main.c
+    suite: settings_tests
+    name: test_invalid_motor_with_valid_crc_is_rejected
+- id: REQ-MBUS-05
+  requirement: FC16 применяет моторные регистры 10–14 атомарно только в STOPPED/READY, а FC03 читает один согласованный набор.
+  origin: project
+  acs880_topic: null
+  code:
+  - file: src/controller_app.c
+    symbol: controller_app_motor_configure
+  verification:
+  - kind: ztest
+    file: tests/modbus/src/main.c
+    suite: modbus_map
+    name: test_motor_fc16_validates_final_candidate_before_commit
+  - kind: ztest
+    file: tests/modbus/src/main.c
+    suite: modbus_map
+    name: test_motor_fc03_snapshot_is_consistent_during_batch_writes
+  - kind: scenario
+    file: scenarios/modbus_motor_parameters.yaml
+    name: modbus_motor_atomic_configuration

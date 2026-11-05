@@ -33,6 +33,7 @@ void controller_app_init(void);
 void controller_app_tick(void);
 int controller_app_start(void);
 int controller_app_setpoint_set(int setpoint_x10);
+int controller_app_motor_configure(unsigned int first, const uint16_t *values, size_t count);
 void controller_app_stop(void);
 int controller_app_reset(void);
 int controller_app_configure(struct controller_config config);

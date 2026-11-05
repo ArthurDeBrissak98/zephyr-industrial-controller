@@ -72,12 +72,26 @@ static void update_protections(struct controller *ctrl, int64_t now_ms)
     if (cleared) record_event(ctrl, EVENT_WARNING_CLEARED, 0, cleared, now_ms);
 }
 
+// REQ-MOTOR-02
+int controller_motor_validate(const struct motor_parameters *motor)
+{
+    if (motor->nominal_voltage_v <= 0 || motor->nominal_voltage_v > UINT16_MAX ||
+        motor->nominal_current_ma <= 0 || motor->nominal_current_ma > UINT16_MAX ||
+        motor->nominal_frequency_x100 <= 0 || motor->nominal_frequency_x100 > UINT16_MAX ||
+        motor->nominal_speed_rpm <= 0 || motor->nominal_speed_rpm > UINT16_MAX ||
+        motor->pole_pairs <= 0 || motor->pole_pairs > UINT16_MAX) return -EINVAL;
+    // Номинальные обороты не могут превышать синхронную скорость поля.
+    int64_t speed = (int64_t)motor->nominal_speed_rpm * motor->pole_pairs * 100;
+    return speed <= (int64_t)motor->nominal_frequency_x100 * 60 ? 0 : -EINVAL;
+}
+
 static int validate_config(struct controller_config config)
 {
     if ((config.profile != PROFILE_PUMP && config.profile != PROFILE_AHU) ||
         (config.mode != INPUT_4_20MA && config.mode != INPUT_0_10V)) return -EINVAL;
     if (config.pid.bias_x100 < 0 || config.pid.bias_x100 > 5000 ||
         config.pid.kp < 0 || config.pid.ki < 0 || config.pid.divisor <= 0) return -EINVAL;
+    if (controller_motor_validate(&config.motor)) return -EINVAL;
     return 0;
 }
 

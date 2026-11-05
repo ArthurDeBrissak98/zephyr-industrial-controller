@@ -134,4 +134,15 @@ ZTEST(settings_tests, test_legacy_settings_add_default_motor_parameters)
     zassert_equal(sys_get_le32(data + 4), 2);
 }
 
+ZTEST(settings_tests, test_invalid_motor_with_valid_crc_is_rejected)
+{
+    sys_put_le32(0, data + 100); // Номинальный ток в записи v2.
+    update_crc();
+    zassert_equal(controller_settings_decode(data, sizeof(data), &parameters), -EINVAL);
+    struct controller_parameters invalid = parameters;
+    invalid.config.motor.nominal_speed_rpm = 1600;
+    zassert_equal(controller_parameters_apply(&ctrl, &invalid, 100), -EINVAL);
+    zassert_equal(ctrl.config.motor.nominal_speed_rpm, 1450);
+}
+
 ZTEST_SUITE(settings_tests, NULL, NULL, before, NULL, NULL);

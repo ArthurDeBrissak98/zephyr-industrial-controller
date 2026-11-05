@@ -203,4 +203,135 @@ ZTEST(modbus_map, test_fc03_stays_consistent_during_fault_transitions)
     zassert_true(consistent, "FC03 combined fields from different controller states");
 }
 
+static uint8_t write_motor(uint16_t address, const uint16_t *values, uint16_t count)
+{
+    uint8_t request[15], response[4];
+    sys_put_be16(address, request);
+    sys_put_be16(count, request + 2);
+    request[4] = count * 2;
+    for (unsigned int i = 0; i < count; i++) sys_put_be16(values[i], request + 5 + i * 2);
+    size_t length;
+    return controller_modbus_fc16(request, 5 + count * 2, response, sizeof(response), &length);
+}
+
+ZTEST(modbus_map, test_motor_registers_and_sparse_map)
+{
+    const uint8_t request[] = {0, 10, 0, 5};
+    uint8_t response[11];
+    size_t length;
+    zassert_ok(controller_modbus_fc03(request, sizeof(request), response, sizeof(response), &length));
+    const uint16_t expected[] = {400, 11500, 5000, 1450, 2};
+    zassert_equal(length, 11);
+    for (int i = 0; i < 5; i++) zassert_equal(sys_get_be16(response + 1 + i * 2), expected[i]);
+    for (uint16_t address = 5; address < 10; address++) {
+        uint16_t value = 123;
+        zassert_equal(controller_modbus_register_read(address, &value), -ENOTSUP);
+        zassert_equal(value, 123);
+    }
+    const uint8_t gap[] = {0, 4, 0, 7};
+    zassert_equal(controller_modbus_fc03(gap, sizeof(gap), response, sizeof(response), &length), 2);
+    const uint8_t beyond[] = {0, 14, 0, 2};
+    zassert_equal(controller_modbus_fc03(beyond, sizeof(beyond), response, sizeof(response), &length), 2);
+    zassert_equal(controller_modbus_register_write(10, 230), -ENOTSUP);
+}
+
+ZTEST(modbus_map, test_motor_fc16_validates_final_candidate_before_commit)
+{
+    const uint16_t invalid[] = {230, 0, 6000, 1750, 2};
+    zassert_equal(write_motor(10, invalid, 5), 2);
+    uint16_t value;
+    zassert_ok(controller_modbus_register_read(10, &value));
+    zassert_equal(value, 400);
+    const uint16_t lower_frequency[] = {4000};
+    zassert_equal(write_motor(12, lower_frequency, 1), 2);
+    // Частота 40 Гц и 1150 об/мин согласованы только как единая запись.
+    const uint16_t pair[] = {4000, 1150};
+    zassert_ok(write_motor(12, pair, 2));
+    struct controller_status status;
+    controller_app_status(&status);
+    zassert_equal(status.config.motor.nominal_frequency_x100, 4000);
+    zassert_equal(status.config.motor.nominal_speed_rpm, 1150);
+    const uint16_t pole_zero[] = {0};
+    zassert_equal(write_motor(14, pole_zero, 1), 2);
+    const uint16_t crossing[] = {3, 230};
+    zassert_equal(write_motor(14, crossing, 2), 2);
+    controller_app_status(&status);
+    zassert_equal(status.config.motor.pole_pairs, 2);
+    zassert_equal(status.config.motor.nominal_voltage_v, 400);
+}
+
+ZTEST(modbus_map, test_motor_cannot_be_changed_running_or_faulted)
+{
+    const uint16_t motor[] = {230, 15000, 6000, 1750, 2};
+    zassert_ok(controller_app_start());
+    zassert_equal(write_motor(10, motor, 5), 2);
+    zassert_ok(controller_app_inject(true));
+    controller_app_tick();
+    zassert_equal(write_motor(10, motor, 5), 2);
+    struct controller_status status;
+    controller_app_status(&status);
+    zassert_equal(status.state, STATE_FAULT);
+    zassert_equal(status.config.motor.nominal_voltage_v, 400);
+}
+
+ZTEST(modbus_map, test_motor_validation_rejects_zero_overflow_and_excess_speed)
+{
+    struct motor_parameters motor = controller_motor_defaults();
+    motor.nominal_speed_rpm = 1501;
+    zassert_equal(controller_motor_validate(&motor), -EINVAL);
+    motor = controller_motor_defaults();
+    motor.nominal_voltage_v = 65536;
+    zassert_equal(controller_motor_validate(&motor), -EINVAL);
+    motor.nominal_voltage_v = 400;
+    motor.nominal_current_ma = -1;
+    zassert_equal(controller_motor_validate(&motor), -EINVAL);
+    motor.nominal_current_ma = 11500;
+    motor.pole_pairs = 0;
+    zassert_equal(controller_motor_validate(&motor), -EINVAL);
+}
+
+static void motor_snapshot_worker(void *a, void *b, void *c)
+{
+    ARG_UNUSED(a); ARG_UNUSED(b); ARG_UNUSED(c);
+    const uint16_t motors[2][5] = {{400, 11500, 5000, 1450, 2}, {230, 15000, 6000, 1750, 2}};
+    for (int i = 0; i < 80; i++) {
+        if (write_motor(10, motors[i % 2], 5)) snapshot_worker_ok = false;
+        k_sleep(K_MSEC(1));
+    }
+}
+
+ZTEST(modbus_map, test_motor_fc03_snapshot_is_consistent_during_batch_writes)
+{
+    const uint16_t motors[2][5] = {{400, 11500, 5000, 1450, 2}, {230, 15000, 6000, 1750, 2}};
+    snapshot_worker_ok = true;
+    int previous_priority = k_thread_priority_get(k_current_get());
+    k_thread_priority_set(k_current_get(), 6);
+    k_thread_create(&snapshot_thread, snapshot_stack, K_THREAD_STACK_SIZEOF(snapshot_stack),
+                    motor_snapshot_worker, NULL, NULL, NULL, 5, 0, K_NO_WAIT);
+    bool consistent = true;
+    const uint8_t request[] = {0, 10, 0, 5};
+    for (int i = 0; i < 200; i++) {
+        uint8_t response[11];
+        size_t length;
+        if (controller_modbus_fc03(request, sizeof(request), response, sizeof(response), &length)) {
+            consistent = false;
+        } else {
+            bool first = true, second = true;
+            for (int j = 0; j < 5; j++) {
+                uint16_t value = sys_get_be16(response + 1 + j * 2);
+                first = first && value == motors[0][j];
+                second = second && value == motors[1][j];
+            }
+            if (!first && !second) consistent = false;
+        }
+        k_sleep(K_MSEC(1));
+    }
+    int joined = k_thread_join(&snapshot_thread, K_SECONDS(2));
+    if (joined) k_thread_abort(&snapshot_thread);
+    k_thread_priority_set(k_current_get(), previous_priority);
+    zassert_ok(joined);
+    zassert_true(snapshot_worker_ok);
+    zassert_true(consistent, "FC03 mixed parameters from different motors");
+}
+
 ZTEST_SUITE(modbus_map, NULL, NULL, before, NULL, NULL);

@@ -319,15 +319,19 @@ static int cmd_modbus_status(const struct shell *sh, size_t argc, char **argv)
 {
     ARG_UNUSED(argc);
     ARG_UNUSED(argv);
-    uint16_t regs[CONTROLLER_MODBUS_REGISTER_COUNT];
-    controller_modbus_snapshot(regs);
+    struct controller_status status;
+    controller_app_status(&status);
     int error = controller_modbus_error();
     shell_print(sh, "modbus_ready=%s error=%d unit_id=1 baud=19200 format=8N2",
                 error ? "no" : "yes", error);
     shell_print(sh, "reg0_state=%u reg1_faults=0x%x reg2_warnings=0x%x",
-                regs[0], regs[1], regs[2]);
+                status.state, status.active_faults, status.active_warnings);
     shell_print(sh, "reg3_measured_x10=%d reg4_setpoint_x10=%d",
-                (int16_t)regs[3], (int16_t)regs[4]);
+                status.sample.measured_x10, status.sample.setpoint_x10);
+    shell_print(sh, "reg10_voltage_v=%d reg11_current_ma=%d reg12_frequency_x100=%d reg13_speed_rpm=%d reg14_pole_pairs=%d",
+                status.config.motor.nominal_voltage_v, status.config.motor.nominal_current_ma,
+                status.config.motor.nominal_frequency_x100, status.config.motor.nominal_speed_rpm,
+                status.config.motor.pole_pairs);
     return 0;
 }
 SHELL_CMD_ARG_REGISTER(modbus_status, NULL, "Карта Holding Registers Modbus",

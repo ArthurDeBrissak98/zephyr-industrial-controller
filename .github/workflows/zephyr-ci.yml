@@ -71,6 +71,11 @@ jobs:
           python -m scripts.run_scenarios --file scenarios/modbus_atomic_write.yaml \
             --elf build/zephyr/zephyr.elf --log build/modbus-atomic.log
 
+      - name: Проверить параметры двигателя через Modbus
+        run: |
+          python -m scripts.run_scenarios --file scenarios/modbus_motor_parameters.yaml \
+            --elf build/zephyr/zephyr.elf --log build/modbus-motor.log
+
       - name: Проверить отказ и повреждение flash
         run: python -m scripts.test_storage --elf build/zephyr/zephyr.elf
 
@@ -106,6 +111,7 @@ jobs:
             build/modbus-test.log
             build/modbus-scenario.log
             build/modbus-atomic.log
+            build/modbus-motor.log
             build/scenarios.log
             build/storage-test.log
             build-watchdog/watchdog-test.log
