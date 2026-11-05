@@ -14,16 +14,16 @@ static int settings_set(const char *name, size_t size, settings_read_cb read_cb,
     if (strcmp(name, "parameters")) return -ENOENT;
     uint8_t data[CONTROLLER_SETTINGS_SIZE];
     found = true;
-    if (size != sizeof(data)) {
+    if (size != sizeof(data) && size != CONTROLLER_SETTINGS_LEGACY_SIZE) {
         read_error = -EINVAL;
         return 0;
     }
-    ssize_t length = read_cb(arg, data, sizeof(data));
-    if (length != (ssize_t)sizeof(data)) {
+    ssize_t length = read_cb(arg, data, size);
+    if (length != (ssize_t)size) {
         read_error = length < 0 ? length : -EIO;
         return 0;
     }
-    read_error = controller_settings_decode(data, sizeof(data), &loaded);
+    read_error = controller_settings_decode(data, size, &loaded);
     return 0;
 }
 

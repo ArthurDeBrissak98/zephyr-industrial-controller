@@ -13,6 +13,7 @@ from .modbus_client import Client
 
 STATUS_FIELDS = {
     "sensor_fault_names", "process_fault_names", "read_error", "sensor_faults", "process_faults", "state", "profile", "mode", "active", "latched", "warnings", "output_x100",
+    "motor_voltage_v", "motor_current_ma", "motor_frequency_x100", "motor_speed_rpm", "motor_pole_pairs",
     "frequency_x100", "current_ua", "voltage_mv", "scaled_x10", "measured_x10",
     "signal_valid", "settings_ready", "settings_present", "settings_error",
     "pid_bias_x100", "pid_kp", "pid_ki", "pid_divisor", "active_names", "latched_names",
@@ -133,18 +134,23 @@ def corrupt_settings_crc(storage):
     """Портим CRC приложения, сохраняя корректную контрольную сумму NVS."""
     path = Path(storage, "controller_flash.bin")
     image = bytearray(path.read_bytes())
-    marker = b"1CIZ" + (1).to_bytes(4, "little")
+    marker = b"1CIZ"
     offset = image.find(marker)
-    if offset < 0 or image.find(marker, offset + 1) >= 0 or offset + 104 > len(image):
-        raise ValueError("Нужна ровно одна запись настроек версии 1")
-    blob = image[offset:offset + 100]
-    stored_crc = int.from_bytes(blob[96:100], "little")
-    if zlib.crc32(blob[:96]) != stored_crc:
+    if offset < 0 or image.find(marker, offset + 1) >= 0 or offset + 8 > len(image):
+        raise ValueError("Нужна ровно одна запись настроек")
+    version = int.from_bytes(image[offset + 4:offset + 8], "little")
+    size = {1: 100, 2: 120}.get(version)
+    if size is None or offset + size + 4 > len(image):
+        raise ValueError("Неизвестный или неполный формат настроек")
+    crc_offset = size - 4
+    blob = image[offset:offset + size]
+    stored_crc = int.from_bytes(blob[crc_offset:], "little")
+    if zlib.crc32(blob[:crc_offset]) != stored_crc:
         raise ValueError("CRC настроек уже повреждена")
-    if zlib.crc32(blob) != int.from_bytes(image[offset + 100:offset + 104], "little"):
+    if zlib.crc32(blob) != int.from_bytes(image[offset + size:offset + size + 4], "little"):
         raise ValueError("Некорректная CRC записи NVS")
-    image[offset + 96] ^= 1
-    image[offset + 100:offset + 104] = zlib.crc32(image[offset:offset + 100]).to_bytes(4, "little")
+    image[offset + crc_offset] ^= 1
+    image[offset + size:offset + size + 4] = zlib.crc32(image[offset:offset + size]).to_bytes(4, "little")
     path.write_bytes(image)
 
 

@@ -4,9 +4,9 @@
 #include <errno.h>
 
 #define SETTINGS_MAGIC 0x5a494331U
-#define SETTINGS_VERSION 1U
+#define SETTINGS_VERSION 2U
 
-BUILD_ASSERT(CONTROLLER_SETTINGS_SIZE == (9 + 4 * PROTECTION_COUNT) * 4,
+BUILD_ASSERT(CONTROLLER_SETTINGS_SIZE == (14 + 4 * PROTECTION_COUNT) * 4,
              "Update the settings format size and version");
 
 static void put_word(uint8_t **cursor, uint32_t value)
@@ -44,6 +44,11 @@ int controller_settings_encode(const struct controller_parameters *parameters,
         put_word(&cursor, p->delay_ms);
         put_word(&cursor, p->enabled ? 1 : 0);
     }
+    put_word(&cursor, config->motor.nominal_voltage_v);
+    put_word(&cursor, config->motor.nominal_current_ma);
+    put_word(&cursor, config->motor.nominal_frequency_x100);
+    put_word(&cursor, config->motor.nominal_speed_rpm);
+    put_word(&cursor, config->motor.pole_pairs);
     put_word(&cursor, crc32_ieee(data, CONTROLLER_SETTINGS_SIZE - 4));
     return 0;
 }
@@ -52,9 +57,11 @@ int controller_settings_encode(const struct controller_parameters *parameters,
 int controller_settings_decode(const uint8_t *data, size_t size,
                                 struct controller_parameters *parameters)
 {
-    if (size != CONTROLLER_SETTINGS_SIZE) return -EINVAL;
+    if (size != CONTROLLER_SETTINGS_SIZE && size != CONTROLLER_SETTINGS_LEGACY_SIZE) return -EINVAL;
     if (sys_get_le32(data) != SETTINGS_MAGIC) return -EBADMSG;
-    if (sys_get_le32(data + 4) != SETTINGS_VERSION) return -ENOTSUP;
+    uint32_t version = sys_get_le32(data + 4);
+    if (version != 1 && version != SETTINGS_VERSION) return -ENOTSUP;
+    if (size != (version == 1 ? CONTROLLER_SETTINGS_LEGACY_SIZE : CONTROLLER_SETTINGS_SIZE)) return -EINVAL;
     if (crc32_ieee(data, size - 4) != sys_get_le32(data + size - 4)) return -EBADMSG;
     const uint8_t *cursor = data + 8;
     struct controller_parameters decoded = {0};
@@ -72,6 +79,15 @@ int controller_settings_decode(const uint8_t *data, size_t size,
         uint32_t enabled = get_word(&cursor);
         if (enabled > 1) return -EINVAL;
         p->enabled = enabled != 0;
+    }
+    if (version == 1) {
+        decoded.config.motor = controller_motor_defaults();
+    } else {
+        decoded.config.motor.nominal_voltage_v = (int32_t)get_word(&cursor);
+        decoded.config.motor.nominal_current_ma = (int32_t)get_word(&cursor);
+        decoded.config.motor.nominal_frequency_x100 = (int32_t)get_word(&cursor);
+        decoded.config.motor.nominal_speed_rpm = (int32_t)get_word(&cursor);
+        decoded.config.motor.pole_pairs = (int32_t)get_word(&cursor);
     }
     int ret = controller_parameters_validate(&decoded);
     if (!ret) *parameters = decoded;

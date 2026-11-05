@@ -121,6 +121,10 @@ static int cmd_status(const struct shell *sh, size_t argc, char **argv)
     shell_print(sh, "pid_bias_x100=%d pid_kp=%d pid_ki=%d pid_divisor=%d",
                 status.config.pid.bias_x100, status.config.pid.kp,
                 status.config.pid.ki, status.config.pid.divisor);
+    shell_print(sh, "motor_voltage_v=%d motor_current_ma=%d motor_frequency_x100=%d motor_speed_rpm=%d motor_pole_pairs=%d",
+                status.config.motor.nominal_voltage_v, status.config.motor.nominal_current_ma,
+                status.config.motor.nominal_frequency_x100, status.config.motor.nominal_speed_rpm,
+                status.config.motor.pole_pairs);
     format_flags(names, sizeof(names), status.active_faults, fault_names, ARRAY_SIZE(fault_names));
     shell_print(sh, "active_names=%s", names);
     format_flags(names, sizeof(names), status.active_warnings, warning_names, ARRAY_SIZE(warning_names));

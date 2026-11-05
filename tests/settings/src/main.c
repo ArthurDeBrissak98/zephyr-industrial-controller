@@ -26,6 +26,7 @@ ZTEST(settings_tests, test_roundtrip_preserves_all_parameters)
     parameters.config.profile = PROFILE_AHU;
     parameters.config.mode = INPUT_0_10V;
     parameters.config.pid = (struct pid_config) {1200, 20, 2, 4};
+    parameters.config.motor = (struct motor_parameters) {230, 15000, 6000, 1750, 2};
     parameters.protections[PROTECTION_LOW_WARNING] = (struct protection_config) {-50, 10, 700, true};
     parameters.protections[PROTECTION_HIGH_WARNING] = (struct protection_config) {300, 10, 900, false};
     parameters.protections[PROTECTION_LOW_TRIP] = (struct protection_config) {-100, 10, 1000, true};
@@ -39,6 +40,7 @@ ZTEST(settings_tests, test_roundtrip_preserves_all_parameters)
     zassert_equal(decoded.config.pid.kp, 20);
     zassert_equal(decoded.config.pid.ki, 2);
     zassert_equal(decoded.config.pid.divisor, 4);
+    zassert_mem_equal(&decoded.config.motor, &parameters.config.motor, sizeof(parameters.config.motor));
     for (int i = 0; i < PROTECTION_COUNT; i++) {
         zassert_equal(decoded.protections[i].threshold_x10, parameters.protections[i].threshold_x10);
         zassert_equal(decoded.protections[i].hysteresis_x10, parameters.protections[i].hysteresis_x10);
@@ -59,7 +61,7 @@ ZTEST(settings_tests, test_corrupted_record_does_not_change_output)
 ZTEST(settings_tests, test_unknown_version_and_wrong_length)
 {
     zassert_equal(controller_settings_decode(data, sizeof(data) - 1, &parameters), -EINVAL);
-    sys_put_le32(2, data + 4);
+    sys_put_le32(3, data + 4);
     update_crc();
     zassert_equal(controller_settings_decode(data, sizeof(data), &parameters), -ENOTSUP);
 }
@@ -112,6 +114,24 @@ ZTEST(settings_tests, test_load_is_rejected_while_running)
     zassert_equal(controller_parameters_apply(&ctrl, &parameters, 1), -EBUSY);
     zassert_equal(ctrl.config.pid.kp, 50);
     zassert_equal(ctrl.state, STATE_RUNNING);
+}
+
+ZTEST(settings_tests, test_legacy_settings_add_default_motor_parameters)
+{
+    uint8_t legacy[CONTROLLER_SETTINGS_LEGACY_SIZE];
+    memcpy(legacy, data, sizeof(legacy) - 4);
+    sys_put_le32(1, legacy + 4);
+    sys_put_le32(crc32_ieee(legacy, sizeof(legacy) - 4), legacy + sizeof(legacy) - 4);
+    struct controller_parameters decoded;
+    zassert_ok(controller_settings_decode(legacy, sizeof(legacy), &decoded));
+    zassert_equal(decoded.config.motor.nominal_voltage_v, 400);
+    zassert_equal(decoded.config.motor.nominal_current_ma, 11500);
+    zassert_equal(decoded.config.motor.nominal_frequency_x100, 5000);
+    zassert_equal(decoded.config.motor.nominal_speed_rpm, 1450);
+    zassert_equal(decoded.config.motor.pole_pairs, 2);
+    zassert_equal(decoded.config.pid.kp, parameters.config.pid.kp);
+    zassert_ok(controller_settings_encode(&decoded, data));
+    zassert_equal(sys_get_le32(data + 4), 2);
 }
 
 ZTEST_SUITE(settings_tests, NULL, NULL, before, NULL, NULL);

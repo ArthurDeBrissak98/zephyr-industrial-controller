@@ -109,6 +109,18 @@ int controller_parameters_validate(const struct controller_parameters *parameter
     return 0;
 }
 
+// REQ-MOTOR-01
+struct motor_parameters controller_motor_defaults(void)
+{
+    return (struct motor_parameters) {
+        .nominal_voltage_v = 400,
+        .nominal_current_ma = 11500,
+        .nominal_frequency_x100 = 5000,
+        .nominal_speed_rpm = 1450,
+        .pole_pairs = 2,
+    };
+}
+
 void controller_init(struct controller *ctrl)
 {
     memset(ctrl, 0, sizeof(*ctrl));
@@ -118,6 +130,7 @@ void controller_init(struct controller *ctrl)
         .profile = PROFILE_PUMP,
         .mode = INPUT_4_20MA,
         .pid = { .bias_x100 = 2500, .kp = 50, .ki = 5, .divisor = 10 },
+        .motor = controller_motor_defaults(),
     };
     ctrl->state = STATE_STOPPED;
     protection_defaults(ctrl);

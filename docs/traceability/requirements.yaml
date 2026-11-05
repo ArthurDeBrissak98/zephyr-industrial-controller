@@ -294,3 +294,23 @@ requirements:
   - kind: scenario
     file: scenarios/modbus_atomic_write.yaml
     name: modbus_fc16_rejection_preserves_setpoint
+- id: REQ-MOTOR-01
+  requirement: Паспортные параметры двигателя имеют дефолты 400 В, 11500 мА, 5000 x0.01 Гц, 1450 об/мин, 2 пары полюсов и сохраняются в NVS v2.
+  origin: project
+  acs880_topic: null
+  code:
+  - file: src/controller.c
+    symbol: controller_motor_defaults
+  verification:
+  - kind: ztest
+    file: tests/controller/src/main.c
+    suite: controller_logic
+    name: test_boot_requires_sample_and_start
+  - kind: ztest
+    file: tests/settings/src/main.c
+    suite: settings_tests
+    name: test_roundtrip_preserves_all_parameters
+  - kind: ztest
+    file: tests/settings/src/main.c
+    suite: settings_tests
+    name: test_legacy_settings_add_default_motor_parameters

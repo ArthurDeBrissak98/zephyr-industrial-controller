@@ -18,6 +18,11 @@ static void before(void *fixture)
 ZTEST(controller_logic, test_boot_requires_sample_and_start)
 {
     zassert_equal(ctrl.state, STATE_STOPPED);
+    zassert_equal(ctrl.config.motor.nominal_voltage_v, 400);
+    zassert_equal(ctrl.config.motor.nominal_current_ma, 11500);
+    zassert_equal(ctrl.config.motor.nominal_frequency_x100, 5000);
+    zassert_equal(ctrl.config.motor.nominal_speed_rpm, 1450);
+    zassert_equal(ctrl.config.motor.pole_pairs, 2);
     zassert_equal(controller_start(&ctrl, 0), -EACCES);
     controller_update(&ctrl, &healthy, 100);
     zassert_equal(ctrl.state, STATE_READY);

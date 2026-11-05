@@ -36,7 +36,7 @@ def check():
         for code in row["code"]:
             text = read(code["file"])
             marker = r"//\s*" + re.escape(id) + r"\s*\n"
-            function = r"(?:static\s+)?(?:void|int|bool|uint8_t|struct signal_value)\s+" + re.escape(code["symbol"]) + r"\s*\("
+            function = r"(?:static\s+)?(?:void|int|bool|uint8_t|struct signal_value|struct motor_parameters)\s+" + re.escape(code["symbol"]) + r"\s*\("
             if not re.search(marker + r"(?://\s*" + TAG + r"\s*\n)*" + function, text):
                 raise ValueError(f"{id}: тег не найден перед {code['file']}:{code['symbol']}")
         for test in row["verification"]:

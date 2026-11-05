@@ -24,10 +24,19 @@ struct pid_config {
     int divisor;
 };
 
+struct motor_parameters {
+    int nominal_voltage_v;
+    int nominal_current_ma;
+    int nominal_frequency_x100;
+    int nominal_speed_rpm;
+    int pole_pairs;
+};
+
 struct controller_config {
     enum controller_profile profile;
     enum input_mode mode;
     struct pid_config pid;
+    struct motor_parameters motor;
 };
 
 struct controller_parameters {
@@ -84,6 +93,7 @@ struct controller {
 };
 
 // Инициализация до запуска потоков. Остальные операции с контроллером — не из ISR.
+struct motor_parameters controller_motor_defaults(void);
 void controller_init(struct controller *ctrl);
 void controller_update(struct controller *ctrl, const struct sensor_sample *sample,
                        int64_t now_ms);
