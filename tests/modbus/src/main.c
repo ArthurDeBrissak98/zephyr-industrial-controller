@@ -238,12 +238,12 @@ ZTEST(modbus_map, test_motor_registers_and_sparse_map)
 ZTEST(modbus_map, test_motor_fc16_validates_final_candidate_before_commit)
 {
     const uint16_t invalid[] = {230, 0, 6000, 1750, 2};
-    zassert_equal(write_motor(10, invalid, 5), 2);
+    zassert_equal(write_motor(10, invalid, 5), 3);
     uint16_t value;
     zassert_ok(controller_modbus_register_read(10, &value));
     zassert_equal(value, 400);
     const uint16_t lower_frequency[] = {4000};
-    zassert_equal(write_motor(12, lower_frequency, 1), 2);
+    zassert_equal(write_motor(12, lower_frequency, 1), 3);
     // Частота 40 Гц и 1150 об/мин согласованы только как единая запись.
     const uint16_t pair[] = {4000, 1150};
     zassert_ok(write_motor(12, pair, 2));
@@ -252,12 +252,32 @@ ZTEST(modbus_map, test_motor_fc16_validates_final_candidate_before_commit)
     zassert_equal(status.config.motor.nominal_frequency_x100, 4000);
     zassert_equal(status.config.motor.nominal_speed_rpm, 1150);
     const uint16_t pole_zero[] = {0};
-    zassert_equal(write_motor(14, pole_zero, 1), 2);
+    zassert_equal(write_motor(14, pole_zero, 1), 3);
     const uint16_t crossing[] = {3, 230};
     zassert_equal(write_motor(14, crossing, 2), 2);
     controller_app_status(&status);
     zassert_equal(status.config.motor.pole_pairs, 2);
     zassert_equal(status.config.motor.nominal_voltage_v, 400);
+}
+
+ZTEST(modbus_map, test_motor_fc16_rejects_invalid_pole_pair_calculation)
+{
+    const uint16_t invalid[][5] = {
+        {230, 15000, 5000, 1, 2},
+        {230, 15000, 99, 50, 1},
+        {230, 15000, 50001, 1500, 2},
+        {230, 15000, 50000, 30001, 1},
+        {230, 15000, 50000, 50, 2},
+    };
+    for (size_t i = 0; i < ARRAY_SIZE(invalid); i++) {
+        zassert_equal(write_motor(10, invalid[i], 5), 3);
+        struct controller_status status;
+        controller_app_status(&status);
+        struct motor_parameters defaults = controller_motor_defaults();
+        zassert_mem_equal(&status.config.motor, &defaults, sizeof(defaults));
+    }
+    const uint16_t valid[] = {230, 15000, 6000, 1750, 2};
+    zassert_ok(write_motor(10, valid, 5));
 }
 
 ZTEST(modbus_map, test_motor_cannot_be_changed_running_or_faulted)

@@ -108,6 +108,10 @@ struct controller {
     uint32_t event_sequence;
 };
 
+// Оценка по паспортным данным: 1–500 Гц, 50–30000 об/мин, 1–100 пар.
+// За пределами этих диапазонов возвращает 0.
+uint32_t calculate_pole_pairs(uint32_t nominal_freq_x100, uint32_t nominal_speed_rpm);
+
 // Инициализация до запуска потоков. Остальные операции с контроллером — не из ISR.
 int controller_motor_configure(struct controller *ctrl, struct motor_parameters motor, int64_t now_ms);
 int controller_motor_validate(const struct motor_parameters *motor);

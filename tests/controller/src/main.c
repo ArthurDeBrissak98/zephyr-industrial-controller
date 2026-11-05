@@ -15,6 +15,49 @@ static void before(void *fixture)
     controller_init(&ctrl);
 }
 
+ZTEST(controller_logic, test_calculate_pole_pairs)
+{
+    zassert_equal(calculate_pole_pairs(5000, 1450), 2);
+    zassert_equal(calculate_pole_pairs(5000, 3000), 1);
+    zassert_equal(calculate_pole_pairs(6000, 1750), 2);
+    // Проверяем округление ниже, ровно на и выше половины.
+    zassert_equal(calculate_pole_pairs(4999, 2000), 1);
+    zassert_equal(calculate_pole_pairs(5000, 2000), 2);
+    zassert_equal(calculate_pole_pairs(5001, 2000), 2);
+    zassert_equal(calculate_pole_pairs(5099, 6100), 1);
+    zassert_equal(calculate_pole_pairs(0, 1450), 0);
+    zassert_equal(calculate_pole_pairs(5000, 0), 0);
+    zassert_equal(calculate_pole_pairs(0, 0), 0);
+    zassert_equal(calculate_pole_pairs(5000, 1), 0);
+    zassert_equal(calculate_pole_pairs(5000, 49), 0);
+    zassert_equal(calculate_pole_pairs(5000, 50), 60);
+    zassert_equal(calculate_pole_pairs(50000, 30000), 1);
+    zassert_equal(calculate_pole_pairs(50000, 30001), 0);
+    zassert_equal(calculate_pole_pairs(99, 50), 0);
+    zassert_equal(calculate_pole_pairs(100, 50), 1);
+    zassert_equal(calculate_pole_pairs(50001, 30000), 0);
+    zassert_equal(calculate_pole_pairs(50000, 300), 100);
+    zassert_equal(calculate_pole_pairs(50000, 297), 0);
+    zassert_equal(calculate_pole_pairs(100, 30000), 0);
+    zassert_equal(calculate_pole_pairs(UINT32_MAX, UINT32_MAX), 0);
+    zassert_equal(calculate_pole_pairs(UINT32_MAX, 1), 0);
+}
+
+ZTEST(controller_logic, test_configure_rejects_invalid_pole_pair_calculation)
+{
+    const int values[][2] = {{5000, 1}, {99, 50}, {50001, 1500},
+                             {50000, 30001}, {50000, 50}, {100, 30000}};
+    struct controller_config original = ctrl.config;
+    for (size_t i = 0; i < ARRAY_SIZE(values); i++) {
+        struct controller_config candidate = original;
+        candidate.motor.nominal_frequency_x100 = values[i][0];
+        candidate.motor.nominal_speed_rpm = values[i][1];
+        zassert_equal(controller_configure(&ctrl, candidate, 100), -EINVAL);
+        zassert_mem_equal(&ctrl.config, &original, sizeof(original));
+    }
+    zassert_ok(controller_configure(&ctrl, original, 100));
+}
+
 ZTEST(controller_logic, test_boot_requires_sample_and_start)
 {
     zassert_equal(ctrl.state, STATE_STOPPED);
