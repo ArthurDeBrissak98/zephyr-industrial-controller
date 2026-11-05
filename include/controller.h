@@ -39,6 +39,12 @@ struct controller_config {
     struct motor_parameters motor;
 };
 
+struct motor_data {
+    uint32_t pole_pairs_calc;
+    uint32_t sync_speed_rpm;
+    int32_t slip_x1000;
+};
+
 struct controller_parameters {
     struct controller_config config;
     struct protection_config protections[PROTECTION_COUNT];
@@ -85,6 +91,7 @@ struct controller {
     struct k_mutex mutex;
     struct controller_config config;
     enum controller_state state;
+    struct motor_data motor;
     struct sensor_sample sample;
     bool sample_valid;
     struct signal_filter signal_filter;
@@ -111,6 +118,7 @@ struct controller {
 // Оценка по паспортным данным: 1–500 Гц, 50–30000 об/мин, 1–100 пар.
 // За пределами этих диапазонов возвращает 0.
 uint32_t calculate_pole_pairs(uint32_t nominal_freq_x100, uint32_t nominal_speed_rpm);
+int calculate_sync_speed_and_slip(struct controller *ctrl);
 
 // Инициализация до запуска потоков. Остальные операции с контроллером — не из ISR.
 int controller_motor_configure(struct controller *ctrl, struct motor_parameters motor, int64_t now_ms);

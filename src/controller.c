@@ -142,6 +142,35 @@ uint32_t calculate_pole_pairs(uint32_t nominal_freq_x100, uint32_t nominal_speed
     return pole_pairs_calc >= 1 && pole_pairs_calc <= 100 ? pole_pairs_calc : 0;
 }
 
+static int motor_sync_speed_and_slip(const struct motor_parameters *parameters,
+                                    struct motor_data *data)
+{
+    if (data->pole_pairs_calc == 0 || data->pole_pairs_calc > 100 ||
+        parameters->nominal_frequency_x100 <= 0 || parameters->nominal_speed_rpm <= 0)
+        return -EINVAL;
+
+    // Частота уже в сотых герца: 50 Гц и две пары дают 1500 об/мин.
+    uint32_t sync_speed_rpm = (uint64_t)60 * parameters->nominal_frequency_x100 /
+                             ((uint64_t)data->pole_pairs_calc * 100);
+    if (sync_speed_rpm == 0 || (uint32_t)parameters->nominal_speed_rpm > sync_speed_rpm)
+        return -EINVAL;
+    int64_t slip_x1000 = ((int64_t)sync_speed_rpm - parameters->nominal_speed_rpm) * 1000 /
+                        sync_speed_rpm;
+    if (slip_x1000 < 0 || slip_x1000 > 200) return -EINVAL;
+
+    data->sync_speed_rpm = sync_speed_rpm;
+    data->slip_x1000 = (int32_t)slip_x1000;
+    return 0;
+}
+
+int calculate_sync_speed_and_slip(struct controller *ctrl)
+{
+    k_mutex_lock(&ctrl->mutex, K_FOREVER);
+    int ret = motor_sync_speed_and_slip(&ctrl->config.motor, &ctrl->motor);
+    k_mutex_unlock(&ctrl->mutex);
+    return ret;
+}
+
 // REQ-MOTOR-02
 int controller_motor_validate(const struct motor_parameters *motor)
 {
@@ -154,7 +183,11 @@ int controller_motor_validate(const struct motor_parameters *motor)
         return -EINVAL;
     // Номинальные обороты не могут превышать синхронную скорость поля.
     int64_t speed = (int64_t)motor->nominal_speed_rpm * motor->pole_pairs * 100;
-    return speed <= (int64_t)motor->nominal_frequency_x100 * 60 ? 0 : -EINVAL;
+    if (speed > (int64_t)motor->nominal_frequency_x100 * 60) return -EINVAL;
+    struct motor_data data = {
+        .pole_pairs_calc = calculate_pole_pairs(motor->nominal_frequency_x100, motor->nominal_speed_rpm),
+    };
+    return motor_sync_speed_and_slip(motor, &data);
 }
 
 static int validate_config(struct controller_config config)
@@ -219,6 +252,9 @@ void controller_init(struct controller *ctrl)
         .motor = controller_motor_defaults(),
     };
     ctrl->state = STATE_STOPPED;
+    ctrl->motor.pole_pairs_calc = calculate_pole_pairs(ctrl->config.motor.nominal_frequency_x100,
+                                                     ctrl->config.motor.nominal_speed_rpm);
+    calculate_sync_speed_and_slip(ctrl);
     protection_defaults(ctrl);
 }
 
@@ -292,7 +328,8 @@ static void controller_update_locked(struct controller *ctrl, const struct senso
     if (ctrl->motor_feedback_seen && !ctrl->motor_feedback_valid) ctrl->sensor_faults |= FAULT_MOTOR_FEEDBACK;
     update_protections(ctrl, now_ms);
     // Проверяем и рабочую копию: повреждённые параметры не должны попасть в расчёт управления.
-    if (controller_motor_validate(&ctrl->config.motor)) ctrl->process_faults |= FAULT_CONFIG_ERROR;
+    if (ctrl->motor.pole_pairs_calc == 0 || controller_motor_validate(&ctrl->config.motor))
+        ctrl->process_faults |= FAULT_CONFIG_ERROR;
     ctrl->active_faults = ctrl->sensor_faults | ctrl->process_faults;
 
     if (ctrl->active_faults != FAULT_NONE) {
@@ -367,6 +404,9 @@ static int controller_configure_locked(struct controller *ctrl, struct controlle
     }
     bool profile_changed = ctrl->config.profile != config.profile;
     ctrl->config = config;
+    ctrl->motor.pole_pairs_calc = calculate_pole_pairs(config.motor.nominal_frequency_x100,
+                                                     config.motor.nominal_speed_rpm);
+    calculate_sync_speed_and_slip(ctrl);
     if (profile_changed) process_protection_defaults(ctrl);
     motor_protection_defaults(ctrl);
     memset(ctrl->protection_states, 0, sizeof(ctrl->protection_states));
@@ -540,6 +580,9 @@ int controller_motor_configure(struct controller *ctrl, struct motor_parameters 
     if (!ret) {
         uint32_t cleared = ctrl->active_warnings & MOTOR_WARNING_MASK;
         ctrl->config.motor = motor;
+        ctrl->motor.pole_pairs_calc = calculate_pole_pairs(motor.nominal_frequency_x100,
+                                                         motor.nominal_speed_rpm);
+        calculate_sync_speed_and_slip(ctrl);
         motor_protection_defaults(ctrl);
         ctrl->active_warnings &= ~MOTOR_WARNING_MASK;
         if (cleared) record_event(ctrl, EVENT_WARNING_CLEARED, 0, cleared, now_ms);
