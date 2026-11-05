@@ -252,10 +252,17 @@ void controller_init(struct controller *ctrl)
         .motor = controller_motor_defaults(),
     };
     ctrl->state = STATE_STOPPED;
+    protection_defaults(ctrl);
     ctrl->motor.pole_pairs_calc = calculate_pole_pairs(ctrl->config.motor.nominal_frequency_x100,
                                                      ctrl->config.motor.nominal_speed_rpm);
-    calculate_sync_speed_and_slip(ctrl);
-    protection_defaults(ctrl);
+    if (calculate_sync_speed_and_slip(ctrl)) {
+        ctrl->motor.slip_x1000 = 0;
+        ctrl->process_faults |= FAULT_CONFIG_ERROR;
+        ctrl->active_faults = ctrl->sensor_faults | ctrl->process_faults;
+        ctrl->latched_faults |= FAULT_CONFIG_ERROR;
+        ctrl->state = STATE_FAULT;
+        record_event(ctrl, EVENT_FAULT, FAULT_CONFIG_ERROR, 0, 0);
+    }
 }
 
 static int64_t pi_target(const struct pid_config *config, int64_t error, int64_t integral)
@@ -399,14 +406,21 @@ static int controller_configure_locked(struct controller *ctrl, struct controlle
 {
     if (validate_config(config)) return -EINVAL;
     if (ctrl->state == STATE_RUNNING || ctrl->state == STATE_FAULT) return -EBUSY;
-    if (ctrl->active_warnings) {
-        record_event(ctrl, EVENT_WARNING_CLEARED, 0, ctrl->active_warnings, now_ms);
-    }
+    struct controller_config previous_config = ctrl->config;
+    struct motor_data previous_motor = ctrl->motor;
     bool profile_changed = ctrl->config.profile != config.profile;
     ctrl->config = config;
     ctrl->motor.pole_pairs_calc = calculate_pole_pairs(config.motor.nominal_frequency_x100,
                                                      config.motor.nominal_speed_rpm);
-    calculate_sync_speed_and_slip(ctrl);
+    if (calculate_sync_speed_and_slip(ctrl)) {
+        ctrl->config = previous_config;
+        ctrl->motor = previous_motor;
+        return -EINVAL;
+    }
+    // До успешного расчёта не меняем защиты, журнал и состояние управления.
+    if (ctrl->active_warnings) {
+        record_event(ctrl, EVENT_WARNING_CLEARED, 0, ctrl->active_warnings, now_ms);
+    }
     if (profile_changed) process_protection_defaults(ctrl);
     motor_protection_defaults(ctrl);
     memset(ctrl->protection_states, 0, sizeof(ctrl->protection_states));
@@ -578,16 +592,24 @@ int controller_motor_configure(struct controller *ctrl, struct motor_parameters 
     int ret = controller_motor_validate(&motor);
     if (!ret && ctrl->state != STATE_STOPPED && ctrl->state != STATE_READY) ret = -EBUSY;
     if (!ret) {
-        uint32_t cleared = ctrl->active_warnings & MOTOR_WARNING_MASK;
+        struct motor_parameters previous_parameters = ctrl->config.motor;
+        struct motor_data previous_motor = ctrl->motor;
         ctrl->config.motor = motor;
         ctrl->motor.pole_pairs_calc = calculate_pole_pairs(motor.nominal_frequency_x100,
                                                          motor.nominal_speed_rpm);
-        calculate_sync_speed_and_slip(ctrl);
+        ret = calculate_sync_speed_and_slip(ctrl);
+        if (ret) {
+            ctrl->config.motor = previous_parameters;
+            ctrl->motor = previous_motor;
+            goto out;
+        }
+        uint32_t cleared = ctrl->active_warnings & MOTOR_WARNING_MASK;
         motor_protection_defaults(ctrl);
         ctrl->active_warnings &= ~MOTOR_WARNING_MASK;
         if (cleared) record_event(ctrl, EVENT_WARNING_CLEARED, 0, cleared, now_ms);
         record_event(ctrl, EVENT_MOTOR_CHANGED, 0, ctrl->active_warnings, now_ms);
     }
+out:
     k_mutex_unlock(&ctrl->mutex);
     return ret;
 }

@@ -143,6 +143,30 @@ ZTEST(controller_logic, test_motor_derived_data_updates_atomically)
     zassert_equal(ctrl.motor.slip_x1000, 33);
 }
 
+ZTEST(controller_logic, test_excess_slip_rejection_preserves_controller)
+{
+    controller_update(&ctrl, &healthy, 100);
+    ctrl.active_warnings = WARNING_HIGH;
+    struct controller_config original = ctrl.config;
+    struct motor_data original_motor = ctrl.motor;
+    size_t event_count = ctrl.event_count;
+    struct controller_config candidate = original;
+    candidate.motor.nominal_speed_rpm = 2100;
+    candidate.motor.pole_pairs = 1;
+    // Одна расчётная пара даёт 3000 об/мин и скольжение 300 промилле.
+    zassert_equal(calculate_pole_pairs(5000, 2100), 1);
+    zassert_equal(controller_configure(&ctrl, candidate, 200), -EINVAL);
+    zassert_equal(controller_motor_configure(&ctrl, candidate.motor, 200), -EINVAL);
+    zassert_mem_equal(&ctrl.config, &original, sizeof(original));
+    zassert_mem_equal(&ctrl.motor, &original_motor, sizeof(original_motor));
+    zassert_equal(ctrl.event_count, event_count);
+    zassert_equal(ctrl.active_warnings, WARNING_HIGH);
+    zassert_equal(ctrl.state, STATE_READY);
+    zassert_equal(ctrl.active_faults, 0);
+    zassert_ok(controller_configure(&ctrl, original, 300));
+    zassert_equal(ctrl.motor.slip_x1000, 33);
+}
+
 ZTEST(controller_logic, test_boot_requires_sample_and_start)
 {
     zassert_equal(ctrl.state, STATE_STOPPED);
