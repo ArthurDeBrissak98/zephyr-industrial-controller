@@ -163,6 +163,44 @@ ZTEST(motor_protections, test_current_trip_latches_and_requires_separate_start)
     zassert_true(found);
 }
 
+ZTEST(motor_protections, test_overfrequency_trip)
+{
+    zassert_equal(ctrl.config.motor.nominal_frequency_x100, 5000);
+    sample.motor.frequency_x100 = 5600;
+    controller_update(&ctrl, &sample, 100);
+    zassert_equal(ctrl.state, STATE_FAULT);
+    zassert_true(ctrl.process_faults & FAULT_MOTOR_OVERFREQUENCY);
+    zassert_true(ctrl.active_faults & FAULT_MOTOR_OVERFREQUENCY);
+    zassert_true(ctrl.latched_faults & FAULT_MOTOR_OVERFREQUENCY);
+    zassert_equal(ctrl.frequency_x100, 0);
+    zassert_equal(controller_reset(&ctrl, 101), -EBUSY);
+    controller_update(&ctrl, &sample, 200);
+    zassert_equal(controller_reset(&ctrl, 201), -EBUSY);
+    zassert_equal(ctrl.state, STATE_FAULT);
+    zassert_true(ctrl.latched_faults & FAULT_MOTOR_OVERFREQUENCY);
+}
+
+ZTEST(motor_protections, test_overfrequency_warning)
+{
+    sample.motor.frequency_x100 = 5300;
+    controller_update(&ctrl, &sample, 100);
+    zassert_equal(ctrl.state, STATE_RUNNING);
+    zassert_equal(ctrl.active_faults & FAULT_MOTOR_OVERFREQUENCY, 0);
+    zassert_equal(ctrl.latched_faults & FAULT_MOTOR_OVERFREQUENCY, 0);
+    zassert_true(ctrl.active_warnings & WARNING_MOTOR_FREQUENCY);
+    struct controller_event event;
+    unsigned int warning_events = 0;
+    for (size_t i = 0; controller_event_get(&ctrl, i, &event); i++) {
+        if (event.type != EVENT_WARNING || !(event.warnings & WARNING_MOTOR_FREQUENCY)) continue;
+        zassert_equal(event.motor.frequency_x100, 5300);
+        warning_events++;
+    }
+    zassert_equal(warning_events, 1);
+    size_t count = ctrl.event_count;
+    controller_update(&ctrl, &sample, 200);
+    zassert_equal(ctrl.event_count, count);
+}
+
 ZTEST(motor_protections, test_actual_frequency_warning_and_trip)
 {
     // Частота обратной связи не совпадает с командой frequency_x100.

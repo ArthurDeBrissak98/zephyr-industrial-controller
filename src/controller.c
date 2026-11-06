@@ -88,7 +88,8 @@ static void update_motor_protections(struct controller *ctrl, int64_t now_ms)
         const struct protection_limit *limit = &ctrl->motor_protections[i];
         // Активную причину проверяем и после останова, иначе её нельзя будет снять.
         if (frequency && !state->active &&
-            (ctrl->state != STATE_RUNNING || ctrl->sample.motor.frequency_x100 <= limit->threshold)) {
+            (ctrl->state != STATE_RUNNING || ctrl->config.motor.nominal_frequency_x100 <= 0 ||
+             ctrl->sample.motor.frequency_x100 <= limit->threshold)) {
             state->pending = false;
             continue;
         }
