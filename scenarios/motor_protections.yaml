@@ -38,18 +38,18 @@ scenarios:
       - restart: true
       - status: {state: READY, settings_present: "yes", output_x100: 0, motor_frequency_warning_x100: 6300, motor_frequency_trip_x100: 6600}
       - command: protect show
-        expect: ["motor-frequency-trip derived=yes unit=Hz_x100 threshold=6600 hysteresis=120 delay_ms=1000"]
+        expect: ["motor-frequency-trip derived=yes unit=Hz_x100 threshold=6600 hysteresis=120 delay_ms=0"]
       - command: start
         expect: [OK]
-      - command: inject motor-frequency 6300
+      - command: inject motor-frequency 6301
         expect: [OK]
-      - status: {state: RUNNING, active: 0, warnings: 8, motor_actual_frequency_x100: 6300, warning_names: MOTOR_FREQUENCY}
-      - command: inject motor-frequency 6600
+      - status: {state: RUNNING, active: 0, warnings: 8, motor_actual_frequency_x100: 6301, warning_names: MOTOR_FREQUENCY}
+      - command: inject motor-frequency 6601
         expect: [OK]
-      - status: {state: FAULT, active: 64, process_faults: 64, latched: 64, output_x100: 0, motor_actual_frequency_x100: 6600, active_names: MOTOR_OVERFREQUENCY}
+      - status: {state: FAULT, active: 64, process_faults: 64, latched: 64, output_x100: 0, motor_actual_frequency_x100: 6601, active_names: MOTOR_OVERFREQUENCY}
       - modbus_read: {address: 0, count: 3, expect: [3, 64, 8]}
       - command: events
-        expect: ["fault_names=MOTOR_OVERFREQUENCY", "motor_actual_frequency_x100=6600", "motor_nominal_frequency_x100=6000"]
+        expect: ["fault_names=MOTOR_OVERFREQUENCY", "motor_actual_frequency_x100=6601", "motor_nominal_frequency_x100=6000"]
       - command: reset
         expect: ["Команда отклонена: -16"]
       - command: inject motor-frequency off

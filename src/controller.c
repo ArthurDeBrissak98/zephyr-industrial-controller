@@ -60,11 +60,14 @@ static void motor_protection_defaults(struct controller *ctrl)
     const struct motor_parameters *motor = &ctrl->config.motor;
     int nominal[] = {motor->nominal_current_ma, motor->nominal_frequency_x100};
     for (int channel = 0; channel < 2; channel++) {
+        bool frequency = channel == 1;
         ctrl->motor_protections[channel * 2] = (struct protection_limit) {
-            motor_percent(nominal[channel], 105), motor_percent(nominal[channel], 2), 500, true,
+            frequency ? (int)((int64_t)nominal[channel] * 105 / 100) : motor_percent(nominal[channel], 105),
+            motor_percent(nominal[channel], 2), frequency ? 0 : 500, true,
         };
         ctrl->motor_protections[channel * 2 + 1] = (struct protection_limit) {
-            motor_percent(nominal[channel], 110), motor_percent(nominal[channel], 2), 1000, true,
+            frequency ? (int)((int64_t)nominal[channel] * 110 / 100) : motor_percent(nominal[channel], 110),
+            motor_percent(nominal[channel], 2), frequency ? 0 : 1000, true,
         };
     }
     memset(ctrl->motor_protection_states, 0, sizeof(ctrl->motor_protection_states));
@@ -81,6 +84,14 @@ static void update_motor_protections(struct controller *ctrl, int64_t now_ms)
 {
     for (int i = 0; i < MOTOR_PROTECTION_COUNT; i++) {
         struct protection_state *state = &ctrl->motor_protection_states[i];
+        bool frequency = i == MOTOR_FREQUENCY_WARNING || i == MOTOR_FREQUENCY_TRIP;
+        const struct protection_limit *limit = &ctrl->motor_protections[i];
+        // Активную причину проверяем и после останова, иначе её нельзя будет снять.
+        if (frequency && !state->active &&
+            (ctrl->state != STATE_RUNNING || ctrl->sample.motor.frequency_x100 <= limit->threshold)) {
+            state->pending = false;
+            continue;
+        }
         if (ctrl->motor_feedback_valid) {
             int value = i < 2 ? ctrl->sample.motor.current_ma : ctrl->sample.motor.frequency_x100;
             protection_update_limit(state, &ctrl->motor_protections[i], false, value, now_ms);

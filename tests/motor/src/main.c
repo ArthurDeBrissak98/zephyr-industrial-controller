@@ -137,14 +137,12 @@ ZTEST(motor_protections, test_actual_frequency_warning_and_trip)
 {
     // Частота обратной связи не совпадает с командой frequency_x100.
     ctrl.frequency_x100 = 100;
-    sample.motor.frequency_x100 = 5250;
+    sample.motor.frequency_x100 = 5251;
     controller_update(&ctrl, &sample, 100);
-    controller_update(&ctrl, &sample, 600);
     zassert_equal(ctrl.active_warnings, WARNING_MOTOR_FREQUENCY);
     zassert_equal(ctrl.state, STATE_RUNNING);
-    sample.motor.frequency_x100 = 5500;
+    sample.motor.frequency_x100 = 5501;
     controller_update(&ctrl, &sample, 700);
-    controller_update(&ctrl, &sample, 1700);
     zassert_equal(ctrl.active_faults, FAULT_MOTOR_OVERFREQUENCY);
     zassert_equal(ctrl.frequency_x100, 0);
     sample.motor.frequency_x100 = 5401;
@@ -154,6 +152,44 @@ ZTEST(motor_protections, test_actual_frequency_warning_and_trip)
     controller_update(&ctrl, &sample, 1900);
     zassert_equal(ctrl.active_faults, 0);
     zassert_equal(ctrl.latched_faults, FAULT_MOTOR_OVERFREQUENCY);
+}
+
+ZTEST(motor_protections, test_frequency_thresholds_are_strict_and_trip_latches)
+{
+    sample.motor.frequency_x100 = 5250;
+    controller_update(&ctrl, &sample, 100);
+    zassert_equal(ctrl.active_warnings, 0);
+    sample.motor.frequency_x100 = 5500;
+    controller_update(&ctrl, &sample, 200);
+    zassert_equal(ctrl.active_warnings, WARNING_MOTOR_FREQUENCY);
+    zassert_equal(ctrl.active_faults, 0);
+    sample.motor.frequency_x100 = 5501;
+    controller_update(&ctrl, &sample, 300);
+    zassert_equal(ctrl.state, STATE_FAULT);
+    zassert_equal(ctrl.latched_faults, FAULT_MOTOR_OVERFREQUENCY);
+    zassert_equal(controller_reset(&ctrl, 301), -EBUSY);
+    sample.motor.frequency_x100 = 0;
+    controller_update(&ctrl, &sample, 400);
+    zassert_equal(ctrl.active_faults, 0);
+    zassert_equal(ctrl.state, STATE_FAULT);
+    zassert_equal(ctrl.latched_faults, FAULT_MOTOR_OVERFREQUENCY);
+    zassert_ok(controller_reset(&ctrl, 401));
+    zassert_equal(ctrl.state, STATE_READY);
+    zassert_equal(ctrl.frequency_x100, 0);
+}
+
+ZTEST(motor_protections, test_frequency_protection_does_not_arm_before_start)
+{
+    controller_stop(&ctrl, 0);
+    sample.motor.frequency_x100 = 6000;
+    controller_update(&ctrl, &sample, 100);
+    controller_update(&ctrl, &sample, 2000);
+    zassert_equal(ctrl.active_warnings, 0);
+    zassert_equal(ctrl.active_faults, 0);
+    zassert_equal(ctrl.latched_faults, 0);
+    zassert_ok(controller_start(&ctrl, 2001));
+    controller_update(&ctrl, &sample, 2100);
+    zassert_equal(ctrl.active_faults, FAULT_MOTOR_OVERFREQUENCY);
 }
 
 ZTEST(motor_protections, test_short_peak_does_not_accumulate_delay)
@@ -233,7 +269,7 @@ ZTEST(motor_protections, test_lost_feedback_stops_instead_of_disabling_protectio
 ZTEST(motor_protections, test_both_motor_faults_and_warnings_are_reported)
 {
     sample.motor.current_ma = 12650;
-    sample.motor.frequency_x100 = 5500;
+    sample.motor.frequency_x100 = 5501;
     controller_update(&ctrl, &sample, 100);
     controller_update(&ctrl, &sample, 1100);
     zassert_equal(ctrl.active_faults, FAULT_MOTOR_OVERCURRENT | FAULT_MOTOR_OVERFREQUENCY);
