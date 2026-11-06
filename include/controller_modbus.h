@@ -8,6 +8,9 @@
 #define CONTROLLER_MODBUS_REGISTER_COUNT 5
 #define CONTROLLER_MODBUS_MOTOR_FIRST 10
 #define CONTROLLER_MODBUS_MOTOR_COUNT 5
+#define CONTROLLER_MODBUS_MOTOR_DATA_FIRST 40
+#define CONTROLLER_MODBUS_MOTOR_DATA_COUNT 8
+#define CONTROLLER_MODBUS_MOTOR_DATA_WRITABLE 4
 
 struct modbus_snapshot {
     uint16_t state;
@@ -16,6 +19,7 @@ struct modbus_snapshot {
     int16_t measured_x10;
     int16_t setpoint_x10;
     struct motor_parameters motor;
+    struct motor_data motor_data;
 };
 
 uint8_t controller_modbus_fc03(const uint8_t *request, size_t size,

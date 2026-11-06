@@ -310,6 +310,59 @@ int controller_app_settings_save(void)
     return ret;
 }
 
+static int save_motor_locked(struct motor_parameters candidate)
+{
+    int ret = controller_motor_validate(&candidate);
+    if (ret) return ret;
+#ifdef CONFIG_APP_SETTINGS
+    if (!settings_ready) {
+        ret = -ENODEV;
+        return ret;
+    }
+    struct controller_parameters parameters;
+    controller_parameters_get(&controller, &parameters);
+    parameters.config.motor = candidate;
+    // Сначала сохраняем проверенный кандидат. При ошибке flash рабочие данные и журнал прежние.
+    ret = controller_settings_write(&parameters);
+    settings_error = ret;
+    if (ret) return ret;
+    settings_present = true;
+    // Валидация и запись проходят под теми же замками: состояние не успеет измениться.
+    ret = controller_motor_configure(&controller, candidate, k_uptime_get());
+#else
+    ret = -ENOTSUP;
+#endif
+    return ret;
+}
+
+// REQ-MOTOR-07
+int controller_app_motor_data_configure(unsigned int first, const uint16_t *values, size_t count)
+{
+    if (!values || !count || first >= 4 || count > 4 - first) return -EINVAL;
+    k_mutex_lock(&controller_lock, K_FOREVER);
+    k_mutex_lock(&controller.mutex, K_FOREVER);
+    int ret = -EBUSY;
+    if (controller.state == STATE_RUNNING || controller.state == STATE_FAULT) goto out;
+    struct motor_parameters candidate = controller.config.motor;
+    for (size_t i = 0; i < count; i++) {
+        switch (first + i) {
+        case 0: candidate.type = values[i]; break;
+        case 1: candidate.nominal_frequency_x100 = values[i]; break;
+        case 2: candidate.nominal_speed_rpm = values[i]; break;
+        case 3: candidate.nominal_current_ma = (int)values[i] * 100; break;
+        }
+    }
+    if (first <= 2 && first + count > 1) {
+        candidate.pole_pairs = calculate_pole_pairs(candidate.nominal_frequency_x100,
+                                                   candidate.nominal_speed_rpm);
+    }
+    ret = save_motor_locked(candidate);
+out:
+    k_mutex_unlock(&controller.mutex);
+    k_mutex_unlock(&controller_lock);
+    return ret;
+}
+
 // REQ-MOTOR-06
 int controller_app_motor_save(unsigned int field, int value)
 {
@@ -330,26 +383,7 @@ int controller_app_motor_save(unsigned int field, int value)
     case 5: candidate.type = value; break;
     default: ret = -EINVAL; goto out;
     }
-    ret = controller_motor_validate(&candidate);
-    if (ret) goto out;
-#ifdef CONFIG_APP_SETTINGS
-    if (!settings_ready) {
-        ret = -ENODEV;
-        goto out;
-    }
-    struct controller_parameters parameters;
-    controller_parameters_get(&controller, &parameters);
-    parameters.config.motor = candidate;
-    // Сначала сохраняем проверенный кандидат. При ошибке flash рабочие данные и журнал прежние.
-    ret = controller_settings_write(&parameters);
-    settings_error = ret;
-    if (ret) goto out;
-    settings_present = true;
-    // Валидация и запись проходят под теми же замками: состояние не успеет измениться.
-    ret = controller_motor_configure(&controller, candidate, k_uptime_get());
-#else
-    ret = -ENOTSUP;
-#endif
+    ret = save_motor_locked(candidate);
 out:
     k_mutex_unlock(&controller.mutex);
     k_mutex_unlock(&controller_lock);

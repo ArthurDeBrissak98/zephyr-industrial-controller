@@ -423,7 +423,7 @@ static int cmd_motor_set(const struct shell *sh, size_t argc, char **argv)
         return command_result(sh, -EINVAL);
     }
     int value;
-    if (!parse_integer(argv[2], &value) || value <= 0 || value > UINT16_MAX)
+    if (!parse_integer(argv[2], &value) || value <= 0 || value > MOTOR_MAX_CURRENT_MA)
         return command_result(sh, -EINVAL);
     if (!strcmp(argv[1], "freq")) {
         if (value > 500) return command_result(sh, -EINVAL);

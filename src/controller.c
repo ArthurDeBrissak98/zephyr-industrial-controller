@@ -188,7 +188,7 @@ int calculate_sync_speed_and_slip(struct controller *ctrl)
 int controller_motor_validate(const struct motor_parameters *motor)
 {
     if (motor->nominal_voltage_v <= 0 || motor->nominal_voltage_v > UINT16_MAX ||
-        motor->nominal_current_ma <= 0 || motor->nominal_current_ma > UINT16_MAX ||
+        motor->nominal_current_ma <= 0 || motor->nominal_current_ma > MOTOR_MAX_CURRENT_MA ||
         motor->nominal_frequency_x100 <= 0 || motor->nominal_frequency_x100 > UINT16_MAX ||
         motor->nominal_speed_rpm <= 0 || motor->nominal_speed_rpm > UINT16_MAX ||
         motor->pole_pairs <= 0 || motor->pole_pairs > UINT16_MAX ||

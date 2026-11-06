@@ -20,6 +20,7 @@ static void take_snapshot(struct modbus_snapshot *snapshot)
         .measured_x10 = status.sample.measured_x10,
         .setpoint_x10 = status.sample.setpoint_x10,
         .motor = status.config.motor,
+        .motor_data = status.motor,
     };
 }
 
@@ -32,10 +33,18 @@ static uint16_t snapshot_register(const struct modbus_snapshot *snapshot, unsign
     case 3: return (uint16_t)snapshot->measured_x10;
     case 4: return (uint16_t)snapshot->setpoint_x10;
     case 10: return snapshot->motor.nominal_voltage_v;
-    case 11: return snapshot->motor.nominal_current_ma;
+    case 11: return MIN(snapshot->motor.nominal_current_ma, UINT16_MAX);
     case 12: return snapshot->motor.nominal_frequency_x100;
     case 13: return snapshot->motor.nominal_speed_rpm;
     case 14: return snapshot->motor.pole_pairs;
+    case 40: return snapshot->motor.type;
+    case 41: return snapshot->motor.nominal_frequency_x100;
+    case 42: return snapshot->motor.nominal_speed_rpm;
+    case 43: return snapshot->motor.nominal_current_ma / 100;
+    case 44: return snapshot->motor_data.pole_pairs_calc;
+    case 45: return snapshot->motor_data.sync_speed_rpm;
+    case 46: return snapshot->motor_data.slip_x1000;
+    case 47: return snapshot->motor_data.max_freq_hz_x100;
     default: return 0;
     }
 }
@@ -57,10 +66,18 @@ static bool motor_range(uint16_t address, uint16_t count)
         count <= CONTROLLER_MODBUS_MOTOR_FIRST + CONTROLLER_MODBUS_MOTOR_COUNT - address;
 }
 
+static bool motor_data_range(uint16_t address, uint16_t count, uint16_t limit)
+{
+    return count && address >= CONTROLLER_MODBUS_MOTOR_DATA_FIRST &&
+        address < CONTROLLER_MODBUS_MOTOR_DATA_FIRST + limit &&
+        count <= CONTROLLER_MODBUS_MOTOR_DATA_FIRST + limit - address;
+}
+
 static bool read_range(uint16_t address, uint16_t count)
 {
     return (count && address < CONTROLLER_MODBUS_REGISTER_COUNT &&
-            count <= CONTROLLER_MODBUS_REGISTER_COUNT - address) || motor_range(address, count);
+            count <= CONTROLLER_MODBUS_REGISTER_COUNT - address) || motor_range(address, count) ||
+        motor_data_range(address, count, CONTROLLER_MODBUS_MOTOR_DATA_COUNT);
 }
 
 // REQ-MBUS-03
@@ -99,11 +116,18 @@ uint8_t controller_modbus_fc16(const uint8_t *request, size_t size,
     uint16_t values[CONTROLLER_MODBUS_REGISTER_COUNT];
     for (unsigned int i = 0; i < count; i++) values[i] = sys_get_be16(request + 5 + i * 2);
     bool setpoint = address == 4 && count == 1;
-    if (!setpoint && !motor_range(address, count)) return 2;
+    bool motor_data = motor_data_range(address, count, CONTROLLER_MODBUS_MOTOR_DATA_WRITABLE);
+    if (!setpoint && !motor_data && !motor_range(address, count)) return 2;
     // Фаза 2 выполняется приложением: актуальное состояние и весь кандидат
     // проверяются под мьютексом, затем применяются одной операцией.
-    int ret = setpoint ? controller_app_setpoint_set((int16_t)values[0]) :
-        controller_app_motor_configure(address - CONTROLLER_MODBUS_MOTOR_FIRST, values, count);
+    int ret;
+    if (motor_data) {
+        ret = controller_app_motor_data_configure(address - CONTROLLER_MODBUS_MOTOR_DATA_FIRST, values, count);
+        if (ret) return 4;
+    } else {
+        ret = setpoint ? controller_app_setpoint_set((int16_t)values[0]) :
+            controller_app_motor_configure(address - CONTROLLER_MODBUS_MOTOR_FIRST, values, count);
+    }
     if (!setpoint && ret == -EINVAL) return 3;
     if (ret) return 2;
     sys_put_be16(address, response);

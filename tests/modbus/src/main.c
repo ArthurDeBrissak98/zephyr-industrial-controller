@@ -214,6 +214,22 @@ static uint8_t write_motor(uint16_t address, const uint16_t *values, uint16_t co
     return controller_modbus_fc16(request, 5 + count * 2, response, sizeof(response), &length);
 }
 
+ZTEST(modbus_map, test_motor_data_registers_are_big_endian_and_read_only)
+{
+    const uint8_t request[] = {0, 40, 0, 8};
+    uint8_t response[17];
+    size_t length;
+    zassert_ok(controller_modbus_fc03(request, sizeof(request), response, sizeof(response), &length));
+    const uint8_t expected[] = {16, 0, 0, 0x13, 0x88, 0x05, 0xaa, 0, 115,
+                               0, 2, 0x05, 0xdc, 0, 33, 0x17, 0x70};
+    zassert_equal(length, sizeof(expected));
+    zassert_mem_equal(response, expected, sizeof(expected));
+    zassert_equal(controller_modbus_register_write(40, 1), -ENOTSUP);
+    zassert_equal(controller_modbus_fc03(request, sizeof(request), response, 16, &length), 4);
+    const uint8_t crossing[] = {0, 47, 0, 2};
+    zassert_equal(controller_modbus_fc03(crossing, sizeof(crossing), response, sizeof(response), &length), 2);
+}
+
 ZTEST(modbus_map, test_motor_registers_and_sparse_map)
 {
     const uint8_t request[] = {0, 10, 0, 5};
@@ -338,6 +354,41 @@ ZTEST(modbus_map, test_motor_fc03_snapshot_is_consistent_during_batch_writes)
         } else {
             bool first = true, second = true;
             for (int j = 0; j < 5; j++) {
+                uint16_t value = sys_get_be16(response + 1 + j * 2);
+                first = first && value == motors[0][j];
+                second = second && value == motors[1][j];
+            }
+            if (!first && !second) consistent = false;
+        }
+        k_sleep(K_MSEC(1));
+    }
+    int joined = k_thread_join(&snapshot_thread, K_SECONDS(2));
+    if (joined) k_thread_abort(&snapshot_thread);
+    k_thread_priority_set(k_current_get(), previous_priority);
+    zassert_ok(joined);
+    zassert_true(snapshot_worker_ok);
+    zassert_true(consistent, "FC03 mixed parameters from different motors");
+}
+
+ZTEST(modbus_map, test_motor_data_snapshot_includes_consistent_derived_fields)
+{
+    const uint16_t motors[2][8] = {{0, 5000, 1450, 115, 2, 1500, 33, 6000},
+                                    {0, 6000, 1750, 150, 2, 1800, 27, 7200}};
+    snapshot_worker_ok = true;
+    int previous_priority = k_thread_priority_get(k_current_get());
+    k_thread_priority_set(k_current_get(), 6);
+    k_thread_create(&snapshot_thread, snapshot_stack, K_THREAD_STACK_SIZEOF(snapshot_stack),
+                    motor_snapshot_worker, NULL, NULL, NULL, 5, 0, K_NO_WAIT);
+    bool consistent = true;
+    const uint8_t request[] = {0, 40, 0, 8};
+    for (int i = 0; i < 200; i++) {
+        uint8_t response[17];
+        size_t length;
+        if (controller_modbus_fc03(request, sizeof(request), response, sizeof(response), &length)) {
+            consistent = false;
+        } else {
+            bool first = true, second = true;
+            for (int j = 0; j < 8; j++) {
                 uint16_t value = sys_get_be16(response + 1 + j * 2);
                 first = first && value == motors[0][j];
                 second = second && value == motors[1][j];

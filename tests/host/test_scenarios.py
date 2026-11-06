@@ -83,6 +83,7 @@ class ScenarioValidationTests(unittest.TestCase):
     def test_modbus_step_validation(self):
         validate_step({"modbus_read": {"address": 0, "count": 5, "expect": [1, 0, 0, 500, 500]}})
         validate_step({"modbus_read": {"address": 10, "count": 5, "expect": [400, 11500, 5000, 1450, 2]}})
+        validate_step({"modbus_read": {"address": 40, "count": 8, "expect": [0, 5000, 1450, 115, 2, 1500, 33, 6000]}})
         for request in (
             {}, {"address": 0, "count": 1},
             {"address": True, "count": 1, "expect": [1]},
@@ -91,6 +92,8 @@ class ScenarioValidationTests(unittest.TestCase):
             {"address": 5, "count": 1, "expect": [0]},
             {"address": 9, "count": 2, "expect": [0, 0]},
             {"address": 14, "count": 2, "expect": [0, 0]},
+            {"address": 47, "count": 2, "expect": [0, 0]},
+            {"address": 48, "count": 1, "expect": [0]},
             {"address": -1, "count": 1, "expect": [0]},
             {"address": 0, "count": 0, "expect": []},
             {"address": 0, "count": 1, "expect": [True]},

@@ -1,0 +1,34 @@
+version: 1
+scenarios:
+  - name: modbus_motor_data_atomic_persistent_write
+    steps:
+      - status: {state: READY}
+      - modbus_read: {address: 40, count: 8, expect: [0, 5000, 1450, 115, 2, 1500, 33, 6000]}
+      # Паспорт меняется одним запросом; расчётные поля читаются одним снимком.
+      - modbus_write_multiple: {address: 40, values: [1, 6000, 1750, 150], expect_exception: 0}
+      - modbus_read: {address: 40, count: 8, expect: [1, 6000, 1750, 150, 2, 1800, 27, 7200]}
+      - modbus_write_multiple: {address: 40, values: [2, 5000, 2100, 200], expect_exception: 4}
+      - modbus_read: {address: 40, count: 8, expect: [1, 6000, 1750, 150, 2, 1800, 27, 7200]}
+      - modbus_write_multiple: {address: 43, values: [200, 1], expect_exception: 2}
+      - modbus_write_multiple: {address: 44, values: [3], expect_exception: 2}
+      - modbus_write_multiple: {address: 48, values: [1], expect_exception: 2}
+      - modbus_read: {address: 40, count: 8, expect: [1, 6000, 1750, 150, 2, 1800, 27, 7200]}
+      # Верхняя граница тока 640 А; ошибка 640,1 А не меняет сохранённый паспорт.
+      - modbus_write_multiple: {address: 43, values: [6400], expect_exception: 0}
+      - modbus_write_multiple: {address: 43, values: [6401], expect_exception: 4}
+      - restart: true
+      - status: {state: READY, settings_present: "yes"}
+      - modbus_read: {address: 40, count: 8, expect: [1, 6000, 1750, 6400, 2, 1800, 27, 7200]}
+      - modbus_read: {address: 11, count: 1, expect: [65535]}
+      - command: motor status
+        expect: ["type=pmsm mode=PI", "nominal_current_ma=640000", "sync_speed_rpm=1800 slip_x1000=27 max_freq_hz_x100=7200"]
+      - command: start
+        expect: [OK]
+      - modbus_write_multiple: {address: 43, values: [150], expect_exception: 4}
+      - command: stop
+        expect: [OK]
+      - command: inject wire-break on
+        expect: [OK]
+      - status: {state: FAULT}
+      - modbus_write_multiple: {address: 40, values: [0], expect_exception: 4}
+      - modbus_read: {address: 40, count: 8, expect: [1, 6000, 1750, 6400, 2, 1800, 27, 7200]}

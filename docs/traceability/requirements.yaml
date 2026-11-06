@@ -415,3 +415,23 @@ requirements:
     file: tests/motor_settings/src/main.c
     suite: motor_settings
     name: test_write_failure_preserves_ram_history_and_stored_config
+
+- id: REQ-MOTOR-07
+  requirement: Modbus 40–47 читает атомарный снимок motor_data; FC16 40–43 валидирует и сохраняет весь кандидат в NVS, при ошибке возвращает 04 без частичного применения; 44–47 доступны только для чтения.
+  origin: project
+  acs880_topic: null
+  code:
+  - file: src/controller_app.c
+    symbol: controller_app_motor_data_configure
+  verification:
+  - kind: ztest
+    file: tests/motor_settings/src/main.c
+    suite: motor_settings
+    name: test_fc16_motor_data_write_failure_leaves_ram_and_journal_unchanged
+  - kind: ztest
+    file: tests/modbus/src/main.c
+    suite: modbus_map
+    name: test_motor_data_snapshot_includes_consistent_derived_fields
+  - kind: scenario
+    file: scenarios/modbus_motor_data.yaml
+    name: modbus_motor_data_atomic_persistent_write
