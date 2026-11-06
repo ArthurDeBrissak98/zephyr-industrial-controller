@@ -91,6 +91,13 @@ jobs:
           python -m scripts.run_scenarios --file scenarios/motor_shell.yaml \
             --elf build/zephyr/zephyr.elf --log build/motor-shell.log
 
+      - name: Проверить допустимый и несовместимый паспорт двигателя
+        run: |
+          python -m scripts.run_scenarios --file tests/conformance/scenarios/motor_config_valid.yaml \
+            --elf build/zephyr/zephyr.elf --log build/motor-config-valid.log
+          python -m scripts.run_scenarios --file tests/conformance/scenarios/motor_config_invalid.yaml \
+            --elf build/zephyr/zephyr.elf --log build/motor-config-invalid.log
+
       - name: Проверить отказ и повреждение flash
         run: python -m scripts.test_storage --elf build/zephyr/zephyr.elf
 
@@ -130,6 +137,8 @@ jobs:
             build/modbus-motor-data.log
             build/motor-protections.log
             build/motor-shell.log
+            build/motor-config-valid.log
+            build/motor-config-invalid.log
             build/scenarios.log
             build/storage-test.log
             build-watchdog/watchdog-test.log

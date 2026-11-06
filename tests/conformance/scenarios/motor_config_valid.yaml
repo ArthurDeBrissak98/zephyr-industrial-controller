@@ -1,0 +1,12 @@
+version: 1
+scenarios:
+  - name: motor_config_valid
+    steps:
+      - status: {state: READY}
+      - command: motor set freq 50
+        expect: [OK]
+      - command: motor set speed 1450
+        expect: [OK]
+      - command: motor set current 11500
+        expect: [OK]
+      - modbus_read: {address: 44, count: 3, expect: [2, 1500, 33]}

@@ -643,3 +643,20 @@ python -m scripts.run_scenarios --file scenarios/motor_shell.yaml \
 ```
 
 Сценарий проверяет все пять параметров, единицы вывода, ошибочные значения и межпараметрные ограничения, согласованность с Modbus, запрет записи во время работы и аварии, сохранение и восстановление NVS.
+
+## Conformance: проверка паспорта двигателя
+
+`tests/conformance/scenarios/motor_config_valid.yaml` задаёт 50 Гц, 1450 об/мин и 11500 мА через Shell и читает FC03 44–46: ожидаются `[2, 1500, 33]`.
+
+`motor_config_invalid.yaml` проверяет отказ Shell с `-EINVAL` и FC16 с Exception 04 для скольжения 300 промилле: 50 Гц, одна пара, 2100 об/мин дают синхронную скорость 3000 об/мин. После отказа паспорт и расчётные значения остаются прежними; перезапуск подтверждает, что невалидные значения не попали в NVS. Одна паспортная пара задаётся перед проверкой, чтобы кандидат дошёл до проверки скольжения.
+
+100 об/мин при 50 Гц не дают превышения скольжения: расчёт возвращает 30 пар, 100 синхронных об/мин и 0 промилле. Сценарий явно проверяет этот случай как допустимый, затем восстанавливает 1450 об/мин.
+
+```bash
+python -m scripts.run_scenarios --file tests/conformance/scenarios/motor_config_valid.yaml \
+  --elf build/zephyr/zephyr.elf --log build/motor-config-valid.log
+python -m scripts.run_scenarios --file tests/conformance/scenarios/motor_config_invalid.yaml \
+  --elf build/zephyr/zephyr.elf --log build/motor-config-invalid.log
+```
+
+Оба сценария включены в Actions, UART/RTU-логи сохраняются в артефактах.

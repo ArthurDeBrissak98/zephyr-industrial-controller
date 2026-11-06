@@ -421,6 +421,12 @@ requirements:
   - kind: scenario
     file: scenarios/motor_shell.yaml
     name: motor_short_commands_save_and_recalculate
+  - kind: scenario
+    file: tests/conformance/scenarios/motor_config_valid.yaml
+    name: motor_config_valid
+  - kind: scenario
+    file: tests/conformance/scenarios/motor_config_invalid.yaml
+    name: motor_config_invalid
   - kind: ztest
     file: tests/motor_settings/src/main.c
     suite: motor_settings

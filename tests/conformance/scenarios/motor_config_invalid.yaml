@@ -1,0 +1,30 @@
+version: 1
+scenarios:
+  - name: motor_config_invalid
+    steps:
+      - status: {state: READY}
+      # 100 об/мин дают 30 пар и нулевое скольжение: это допустимый контрольный случай.
+      - command: motor set speed 100
+        expect: [OK]
+      - command: motor status
+        expect: ["nominal_speed_rpm=100 об/мин", "pole_pairs_calc=30 sync_speed_rpm=100 slip_x1000=0"]
+      - command: motor set speed 1450
+        expect: [OK]
+      # Одна паспортная пара позволяет проверить именно slip > 20%, а не превышение синхронной скорости.
+      - command: motor set pole_pairs 1
+        expect: [OK]
+      # При 2100 об/мин расчётная пара одна: Ns=3000, slip=300 промилле.
+      - command: motor set speed 2100
+        expect: ["Команда отклонена: -22"]
+      - command: motor status
+        expect: ["nominal_frequency_x100=5000", "nominal_speed_rpm=1450 об/мин", "nominal_current_ma=11500", "pole_pairs=1", "pole_pairs_calc=2 sync_speed_rpm=1500 slip_x1000=33"]
+      - modbus_write_multiple: {address: 41, values: [5000, 2100], expect_exception: 4}
+      - modbus_read: {address: 40, count: 8, expect: [0, 5000, 1450, 115, 2, 1500, 33, 6000]}
+      - command: motor status
+        expect: ["nominal_speed_rpm=1450 об/мин", "pole_pairs=1", "pole_pairs_calc=2 sync_speed_rpm=1500 slip_x1000=33"]
+      # Отказ не должен затронуть и сохранённую конфигурацию.
+      - restart: true
+      - status: {state: READY, settings_present: "yes"}
+      - modbus_read: {address: 44, count: 3, expect: [2, 1500, 33]}
+      - command: motor status
+        expect: ["nominal_speed_rpm=1450 об/мин", "pole_pairs=1"]
