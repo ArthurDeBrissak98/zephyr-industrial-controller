@@ -301,12 +301,20 @@ static void update_pi(struct controller *ctrl, int64_t dt_ms)
 
     int64_t target = pi_target(config, error, candidate);
     int64_t slip_comp_x100 = 0;
+    // Slip compensation: добавляет частоту пропорционально нагрузке (I/I_nom * slip_nom).
     if (ctrl->motor_feedback_valid && ctrl->config.motor.nominal_current_ma > 0 &&
-        ctrl->motor.slip_x1000 > 0) {
+        ctrl->config.motor.nominal_frequency_x100 > 0 && ctrl->motor.slip_x1000 > 0) {
         int64_t load_x1000 = (int64_t)ctrl->sample.motor.current_ma * 1000 /
                             ctrl->config.motor.nominal_current_ma;
-        slip_comp_x100 = (int64_t)ctrl->motor.slip_x1000 * load_x1000 / 10000;
+        int64_t factor = (int64_t)ctrl->motor.slip_x1000 * ctrl->config.motor.nominal_frequency_x100;
+        // Ограничиваем до тройного произведения: даже завышенный ток не переполнит int64_t.
+        if (load_x1000 > 500000000LL / factor) {
+            slip_comp_x100 = 500;
+        } else {
+            slip_comp_x100 = factor * load_x1000 / 1000000LL;
+        }
         if (slip_comp_x100 > 500) slip_comp_x100 = 500;
+        if (slip_comp_x100 < 0) slip_comp_x100 = 0;
     }
     target += slip_comp_x100;
     bool pushes_saturation = (target >= 5000 && error > 0) || (target <= 0 && error < 0);

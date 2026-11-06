@@ -23,17 +23,47 @@ ZTEST(motor_protections, test_slip_compensation_tracks_actual_current)
     ctrl.config.pid = (struct pid_config) {2500, 0, 0, 10};
     ctrl.frequency_x100 = 2500;
     controller_update(&ctrl, &sample, 100);
-    zassert_equal(ctrl.frequency_x100, 2501);
+    zassert_equal(ctrl.frequency_x100, 2582);
     sample.motor.current_ma = ctrl.config.motor.nominal_current_ma;
     controller_update(&ctrl, &sample, 200);
-    zassert_equal(ctrl.frequency_x100, 2503);
+    zassert_equal(ctrl.frequency_x100, 2665);
     sample.motor.current_ma = 0;
     controller_update(&ctrl, &sample, 300);
+    controller_update(&ctrl, &sample, 350);
     zassert_equal(ctrl.frequency_x100, 2500);
     sample.motor.current_ma = 11500;
     ctrl.motor.slip_x1000 = 0;
     controller_update(&ctrl, &sample, 400);
     zassert_equal(ctrl.frequency_x100, 2500);
+}
+
+ZTEST(motor_protections, test_slip_compensation)
+{
+    struct controller baseline;
+    controller_init(&baseline);
+    controller_stop(&ctrl, 0);
+    struct controller_config config = ctrl.config;
+    config.motor.nominal_current_ma = 10000;
+    config.pid = (struct pid_config) {2500, 0, 0, 10};
+    zassert_ok(controller_configure(&ctrl, config, 0));
+    zassert_ok(controller_configure(&baseline, config, 0));
+    baseline.motor.slip_x1000 = 0;
+    sample.motor.current_ma = 10000;
+    controller_update(&ctrl, &sample, 0);
+    controller_update(&baseline, &sample, 0);
+    zassert_ok(controller_start(&ctrl, 0));
+    zassert_ok(controller_start(&baseline, 0));
+    for (int tick = 1; tick <= 30; tick++) {
+        controller_update(&ctrl, &sample, tick * 100);
+        controller_update(&baseline, &sample, tick * 100);
+    }
+    zassert_equal(ctrl.frequency_x100 - baseline.frequency_x100, 165);
+    sample.motor.current_ma = 0;
+    for (int tick = 31; tick <= 35; tick++) {
+        controller_update(&ctrl, &sample, tick * 100);
+        controller_update(&baseline, &sample, tick * 100);
+    }
+    zassert_equal(ctrl.frequency_x100, baseline.frequency_x100);
 }
 
 ZTEST(motor_protections, test_slip_compensation_caps_at_five_hz_without_overflow)
