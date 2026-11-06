@@ -1,6 +1,7 @@
 #include "controller.h"
 #include <zephyr/ztest.h>
 #include <errno.h>
+#include <limits.h>
 
 static struct controller ctrl;
 static struct sensor_sample sample;
@@ -15,6 +16,57 @@ static void before(void *fixture)
     };
     controller_update(&ctrl, &sample, 0);
     zassert_ok(controller_start(&ctrl, 0));
+}
+
+ZTEST(motor_protections, test_slip_compensation_tracks_actual_current)
+{
+    ctrl.config.pid = (struct pid_config) {2500, 0, 0, 10};
+    ctrl.frequency_x100 = 2500;
+    controller_update(&ctrl, &sample, 100);
+    zassert_equal(ctrl.frequency_x100, 2501);
+    sample.motor.current_ma = ctrl.config.motor.nominal_current_ma;
+    controller_update(&ctrl, &sample, 200);
+    zassert_equal(ctrl.frequency_x100, 2503);
+    sample.motor.current_ma = 0;
+    controller_update(&ctrl, &sample, 300);
+    zassert_equal(ctrl.frequency_x100, 2500);
+    sample.motor.current_ma = 11500;
+    ctrl.motor.slip_x1000 = 0;
+    controller_update(&ctrl, &sample, 400);
+    zassert_equal(ctrl.frequency_x100, 2500);
+}
+
+ZTEST(motor_protections, test_slip_compensation_caps_at_five_hz_without_overflow)
+{
+    ctrl.config.pid = (struct pid_config) {2500, 0, 0, 10};
+    ctrl.config.motor.nominal_current_ma = 1;
+    ctrl.motor_protections[MOTOR_CURRENT_WARNING].enabled = false;
+    ctrl.motor_protections[MOTOR_CURRENT_TRIP].enabled = false;
+    sample.motor.current_ma = INT_MAX;
+    ctrl.frequency_x100 = 3000;
+    controller_update(&ctrl, &sample, 100);
+    zassert_equal(ctrl.state, STATE_RUNNING);
+    zassert_equal(ctrl.frequency_x100, 3000);
+}
+
+ZTEST(motor_protections, test_slip_compensation_respects_output_limit_and_anti_windup)
+{
+    ctrl.config.pid = (struct pid_config) {4999, 0, 0, 10};
+    ctrl.frequency_x100 = 4999;
+    sample.setpoint_x10 = 600;
+    sample.motor.current_ma = 11500;
+    controller_update(&ctrl, &sample, 100);
+    zassert_equal(ctrl.frequency_x100, 5000);
+    zassert_equal(ctrl.integral, 0);
+}
+
+ZTEST(motor_protections, test_slip_compensation_does_not_run_when_stopped)
+{
+    controller_stop(&ctrl, 0);
+    sample.motor.current_ma = 11500;
+    controller_update(&ctrl, &sample, 100);
+    zassert_equal(ctrl.frequency_x100, 0);
+    zassert_not_equal(ctrl.state, STATE_RUNNING);
 }
 
 ZTEST(motor_protections, test_defaults_derive_from_motor_ratings)
