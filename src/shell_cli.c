@@ -398,6 +398,12 @@ static int cmd_motor_status(const struct shell *sh, size_t argc, char **argv)
                 motor->nominal_frequency_x100 / 100, motor->nominal_frequency_x100 % 100);
     shell_print(sh, "nominal_speed_rpm=%d об/мин", motor->nominal_speed_rpm);
     shell_print(sh, "pole_pairs=%d (число пар полюсов)", motor->pole_pairs);
+    static const char *const types[] = {"induction", "pmsm", "synrm"};
+    shell_print(sh, "type=%s mode=PI", (unsigned int)motor->type < ARRAY_SIZE(types) ? types[motor->type] : "invalid");
+    shell_print(sh, "pole_pairs_calc=%u sync_speed_rpm=%u slip_x1000=%d max_freq_hz_x100=%u",
+                status.motor.pole_pairs_calc, status.motor.sync_speed_rpm,
+                status.motor.slip_x1000, status.motor.max_freq_hz_x100);
+    shell_print(sh, "effective_max_freq_hz_x100=%u", MIN(5000U, status.motor.max_freq_hz_x100));
     return 0;
 }
 
@@ -409,22 +415,31 @@ static int cmd_motor_set(const struct shell *sh, size_t argc, char **argv)
         "nominal_voltage_v", "nominal_current_ma", "nominal_frequency_x100",
         "nominal_speed_rpm", "pole_pairs",
     };
-    int value;
-    if (!parse_integer(argv[2], &value) || value <= 0 || value > UINT16_MAX) {
+    if (!strcmp(argv[1], "type")) {
+        static const char *const types[] = {"induction", "pmsm", "synrm"};
+        for (size_t i = 0; i < ARRAY_SIZE(types); i++) {
+            if (!strcmp(argv[2], types[i])) return command_result(sh, controller_app_motor_save(5, i));
+        }
         return command_result(sh, -EINVAL);
     }
+    int value;
+    if (!parse_integer(argv[2], &value) || value <= 0 || value > UINT16_MAX)
+        return command_result(sh, -EINVAL);
+    if (!strcmp(argv[1], "freq")) {
+        if (value > 500) return command_result(sh, -EINVAL);
+        return command_result(sh, controller_app_motor_save(2, value * 100));
+    }
+    if (!strcmp(argv[1], "speed")) return command_result(sh, controller_app_motor_save(3, value));
+    if (!strcmp(argv[1], "current")) return command_result(sh, controller_app_motor_save(1, value));
     for (size_t i = 0; i < ARRAY_SIZE(names); i++) {
-        if (strcmp(argv[1], names[i])) continue;
-        uint16_t raw = value;
-        // Общий API с Modbus проверяет весь кандидат и применяет его под мьютексом.
-        return command_result(sh, controller_app_motor_configure(i, &raw, 1));
+        if (!strcmp(argv[1], names[i])) return command_result(sh, controller_app_motor_save(i, value));
     }
     return command_result(sh, -EINVAL);
 }
 
 SHELL_STATIC_SUBCMD_SET_CREATE(motor_commands,
     SHELL_CMD_ARG(status, NULL, "Паспорт двигателя и единицы измерения", cmd_motor_status, 1, 0),
-    SHELL_CMD_ARG(set, NULL, "<nominal_voltage_v|nominal_current_ma|nominal_frequency_x100|nominal_speed_rpm|pole_pairs> <целое значение>",
+    SHELL_CMD_ARG(set, NULL, "<freq Hz|speed RPM|current mA|type induction/pmsm/synrm>; также полные имена полей",
                   cmd_motor_set, 3, 0),
     SHELL_SUBCMD_SET_END);
 SHELL_CMD_REGISTER(motor, &motor_commands, "Параметры двигателя", NULL);

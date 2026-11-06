@@ -167,6 +167,23 @@ ZTEST(controller_logic, test_excess_slip_rejection_preserves_controller)
     zassert_equal(ctrl.motor.slip_x1000, 33);
 }
 
+ZTEST(controller_logic, test_motor_max_frequency_limits_target_and_integrator)
+{
+    struct controller_config config = ctrl.config;
+    config.motor.nominal_frequency_x100 = 2500;
+    config.motor.nominal_speed_rpm = 725;
+    config.pid = (struct pid_config) {5000, 0, 0, 10};
+    zassert_ok(controller_configure(&ctrl, config, 0));
+    zassert_equal(ctrl.motor.max_freq_hz_x100, 3000);
+    struct sensor_sample sample = healthy;
+    sample.setpoint_x10 = 600;
+    controller_update(&ctrl, &sample, 0);
+    zassert_ok(controller_start(&ctrl, 0));
+    for (int tick = 1; tick <= 40; tick++) controller_update(&ctrl, &sample, tick * 100);
+    zassert_equal(ctrl.frequency_x100, 3000);
+    zassert_equal(ctrl.integral, 0);
+}
+
 ZTEST(controller_logic, test_boot_requires_sample_and_start)
 {
     zassert_equal(ctrl.state, STATE_STOPPED);

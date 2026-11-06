@@ -194,6 +194,7 @@ void controller_app_status(struct controller_status *status)
         .motor_frequency_injected = motor_injected[MOTOR_FEEDBACK_FREQUENCY],
         .state = controller.state,
         .config = controller.config,
+        .motor = controller.motor,
         .sample = controller.sample,
         .active_warnings = controller.active_warnings,
         .sensor_faults = controller.sensor_faults,
@@ -304,6 +305,52 @@ int controller_app_settings_save(void)
     }
     settings_error = ret;
 #endif
+    k_mutex_unlock(&controller.mutex);
+    k_mutex_unlock(&controller_lock);
+    return ret;
+}
+
+// REQ-MOTOR-06
+int controller_app_motor_save(unsigned int field, int value)
+{
+    k_mutex_lock(&controller_lock, K_FOREVER);
+    k_mutex_lock(&controller.mutex, K_FOREVER);
+    int ret = -ENOTSUP;
+    if (controller.state == STATE_RUNNING || controller.state == STATE_FAULT) {
+        ret = -EBUSY;
+        goto out;
+    }
+    struct motor_parameters candidate = controller.config.motor;
+    switch (field) {
+    case 0: candidate.nominal_voltage_v = value; break;
+    case 1: candidate.nominal_current_ma = value; break;
+    case 2: candidate.nominal_frequency_x100 = value; break;
+    case 3: candidate.nominal_speed_rpm = value; break;
+    case 4: candidate.pole_pairs = value; break;
+    case 5: candidate.type = value; break;
+    default: ret = -EINVAL; goto out;
+    }
+    ret = controller_motor_validate(&candidate);
+    if (ret) goto out;
+#ifdef CONFIG_APP_SETTINGS
+    if (!settings_ready) {
+        ret = -ENODEV;
+        goto out;
+    }
+    struct controller_parameters parameters;
+    controller_parameters_get(&controller, &parameters);
+    parameters.config.motor = candidate;
+    // Сначала сохраняем проверенный кандидат. При ошибке flash рабочие данные и журнал прежние.
+    ret = controller_settings_write(&parameters);
+    settings_error = ret;
+    if (ret) goto out;
+    settings_present = true;
+    // Валидация и запись проходят под теми же замками: состояние не успеет измениться.
+    ret = controller_motor_configure(&controller, candidate, k_uptime_get());
+#else
+    ret = -ENOTSUP;
+#endif
+out:
     k_mutex_unlock(&controller.mutex);
     k_mutex_unlock(&controller_lock);
     return ret;

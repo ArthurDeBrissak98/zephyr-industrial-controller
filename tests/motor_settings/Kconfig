@@ -1,0 +1,5 @@
+mainmenu "Motor settings tests"
+source "Kconfig.zephyr"
+config APP_SETTINGS
+    bool
+    default y

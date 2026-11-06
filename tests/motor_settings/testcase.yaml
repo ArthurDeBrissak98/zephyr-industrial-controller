@@ -1,0 +1,4 @@
+tests:
+  controller.motor_settings:
+    platform_allow: qemu_cortex_m3
+    tags: [controller, settings, motor]

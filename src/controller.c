@@ -172,6 +172,7 @@ static int motor_sync_speed_and_slip(const struct motor_parameters *parameters,
 
     data->sync_speed_rpm = sync_speed_rpm;
     data->slip_x1000 = (int32_t)slip_x1000;
+    data->max_freq_hz_x100 = (uint64_t)parameters->nominal_frequency_x100 * 120 / 100;
     return 0;
 }
 
@@ -190,7 +191,8 @@ int controller_motor_validate(const struct motor_parameters *motor)
         motor->nominal_current_ma <= 0 || motor->nominal_current_ma > UINT16_MAX ||
         motor->nominal_frequency_x100 <= 0 || motor->nominal_frequency_x100 > UINT16_MAX ||
         motor->nominal_speed_rpm <= 0 || motor->nominal_speed_rpm > UINT16_MAX ||
-        motor->pole_pairs <= 0 || motor->pole_pairs > UINT16_MAX) return -EINVAL;
+        motor->pole_pairs <= 0 || motor->pole_pairs > UINT16_MAX ||
+        (unsigned int)motor->type > MOTOR_SYNRM) return -EINVAL;
     if (calculate_pole_pairs(motor->nominal_frequency_x100, motor->nominal_speed_rpm) == 0)
         return -EINVAL;
     // Номинальные обороты не могут превышать синхронную скорость поля.
@@ -249,6 +251,7 @@ struct motor_parameters controller_motor_defaults(void)
         .nominal_frequency_x100 = 5000,
         .nominal_speed_rpm = 1450,
         .pole_pairs = 2,
+        .type = MOTOR_INDUCTION,
     };
 }
 
@@ -318,10 +321,11 @@ static void update_pi(struct controller *ctrl, int64_t dt_ms)
         if (slip_comp_x100 < 0) slip_comp_x100 = 0;
     }
     target += slip_comp_x100;
-    bool pushes_saturation = (target >= 5000 && error > 0) || (target <= 0 && error < 0);
+    int64_t max_frequency = MIN(5000U, ctrl->motor.max_freq_hz_x100);
+    bool pushes_saturation = (target >= max_frequency && error > 0) || (target <= 0 && error < 0);
     if (!pushes_saturation) ctrl->integral = candidate;
     // При обратном знаке ошибки интегратор может выйти из насыщения.
-    if (target > 5000) target = 5000;
+    if (target > max_frequency) target = max_frequency;
     if (target < 0) target = 0;
     int difference = (int)target - ctrl->frequency_x100;
     if (difference > 100) difference = 100;

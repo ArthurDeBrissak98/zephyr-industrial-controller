@@ -4,7 +4,8 @@
 #include "controller.h"
 
 #define CONTROLLER_SETTINGS_LEGACY_SIZE 100
-#define CONTROLLER_SETTINGS_SIZE 120
+#define CONTROLLER_SETTINGS_V2_SIZE 120
+#define CONTROLLER_SETTINGS_SIZE 124
 
 int controller_settings_encode(const struct controller_parameters *parameters,
                                 uint8_t data[CONTROLLER_SETTINGS_SIZE]);

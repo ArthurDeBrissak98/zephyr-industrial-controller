@@ -26,7 +26,7 @@ ZTEST(settings_tests, test_roundtrip_preserves_all_parameters)
     parameters.config.profile = PROFILE_AHU;
     parameters.config.mode = INPUT_0_10V;
     parameters.config.pid = (struct pid_config) {1200, 20, 2, 4};
-    parameters.config.motor = (struct motor_parameters) {230, 15000, 6000, 1750, 2};
+    parameters.config.motor = (struct motor_parameters) {230, 15000, 6000, 1750, 2, MOTOR_PMSM};
     parameters.protections[PROTECTION_LOW_WARNING] = (struct protection_config) {-50, 10, 700, true};
     parameters.protections[PROTECTION_HIGH_WARNING] = (struct protection_config) {300, 10, 900, false};
     parameters.protections[PROTECTION_LOW_TRIP] = (struct protection_config) {-100, 10, 1000, true};
@@ -61,7 +61,7 @@ ZTEST(settings_tests, test_corrupted_record_does_not_change_output)
 ZTEST(settings_tests, test_unknown_version_and_wrong_length)
 {
     zassert_equal(controller_settings_decode(data, sizeof(data) - 1, &parameters), -EINVAL);
-    sys_put_le32(3, data + 4);
+    sys_put_le32(99, data + 4);
     update_crc();
     zassert_equal(controller_settings_decode(data, sizeof(data), &parameters), -ENOTSUP);
 }
@@ -131,7 +131,26 @@ ZTEST(settings_tests, test_legacy_settings_add_default_motor_parameters)
     zassert_equal(decoded.config.motor.pole_pairs, 2);
     zassert_equal(decoded.config.pid.kp, parameters.config.pid.kp);
     zassert_ok(controller_settings_encode(&decoded, data));
-    zassert_equal(sys_get_le32(data + 4), 2);
+    zassert_equal(sys_get_le32(data + 4), 3);
+}
+
+ZTEST(settings_tests, test_v2_settings_load_as_induction)
+{
+    uint8_t legacy[CONTROLLER_SETTINGS_V2_SIZE];
+    memcpy(legacy, data, sizeof(legacy) - 4);
+    sys_put_le32(2, legacy + 4);
+    sys_put_le32(crc32_ieee(legacy, sizeof(legacy) - 4), legacy + sizeof(legacy) - 4);
+    struct controller_parameters decoded;
+    zassert_ok(controller_settings_decode(legacy, sizeof(legacy), &decoded));
+    zassert_equal(decoded.config.motor.type, MOTOR_INDUCTION);
+    zassert_equal(decoded.config.motor.nominal_frequency_x100, 5000);
+}
+
+ZTEST(settings_tests, test_invalid_motor_type_with_valid_crc_is_rejected)
+{
+    sys_put_le32(99, data + 116);
+    update_crc();
+    zassert_equal(controller_settings_decode(data, sizeof(data), &parameters), -EINVAL);
 }
 
 ZTEST(settings_tests, test_invalid_motor_with_valid_crc_is_rejected)

@@ -24,12 +24,15 @@ struct pid_config {
     int divisor;
 };
 
+enum motor_type { MOTOR_INDUCTION, MOTOR_PMSM, MOTOR_SYNRM };
+
 struct motor_parameters {
     int nominal_voltage_v;
     int nominal_current_ma;
     int nominal_frequency_x100;
     int nominal_speed_rpm;
     int pole_pairs;
+    enum motor_type type;
 };
 
 struct controller_config {
@@ -43,6 +46,7 @@ struct motor_data {
     uint32_t pole_pairs_calc;
     uint32_t sync_speed_rpm;
     int32_t slip_x1000;
+    uint32_t max_freq_hz_x100;
 };
 
 struct controller_parameters {

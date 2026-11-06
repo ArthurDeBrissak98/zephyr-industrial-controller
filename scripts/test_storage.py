@@ -20,6 +20,9 @@ def test_unavailable(elf, qemu, log):
             status = console.status("READY")
             require(status_matches(status, {"settings_ready": "no", "output_x100": 0}), status)
             require("Команда отклонена" in console.command("config save"), "Save accepted without flash")
+            require("Команда отклонена" in console.command("motor set current 15000"), "Motor accepted without flash")
+            motor = console.command("motor status")
+            require("nominal_current_ma=11500" in motor and "type=induction" in motor, motor)
         finally:
             log.extend(console.transcript)
             console.close()

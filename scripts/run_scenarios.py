@@ -143,7 +143,7 @@ def corrupt_settings_crc(storage):
     if offset < 0 or image.find(marker, offset + 1) >= 0 or offset + 8 > len(image):
         raise ValueError("Нужна ровно одна запись настроек")
     version = int.from_bytes(image[offset + 4:offset + 8], "little")
-    size = {1: 100, 2: 120}.get(version)
+    size = {1: 100, 2: 120, 3: 124}.get(version)
     if size is None or offset + size + 4 > len(image):
         raise ValueError("Неизвестный или неполный формат настроек")
     crc_offset = size - 4

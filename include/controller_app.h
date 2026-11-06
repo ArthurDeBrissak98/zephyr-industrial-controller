@@ -6,6 +6,7 @@
 struct controller_status {
     enum controller_state state;
     struct controller_config config;
+    struct motor_data motor;
     struct sensor_sample sample;
     struct protection_config protections[PROTECTION_COUNT];
     struct protection_limit motor_protections[MOTOR_PROTECTION_COUNT];
@@ -37,6 +38,7 @@ void controller_app_init(void);
 void controller_app_tick(void);
 int controller_app_start(void);
 int controller_app_setpoint_set(int setpoint_x10);
+int controller_app_motor_save(unsigned int field, int value);
 int controller_app_motor_configure(unsigned int first, const uint16_t *values, size_t count);
 void controller_app_stop(void);
 int controller_app_reset(void);

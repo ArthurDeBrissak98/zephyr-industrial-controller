@@ -14,7 +14,8 @@ static int settings_set(const char *name, size_t size, settings_read_cb read_cb,
     if (strcmp(name, "parameters")) return -ENOENT;
     uint8_t data[CONTROLLER_SETTINGS_SIZE];
     found = true;
-    if (size != sizeof(data) && size != CONTROLLER_SETTINGS_LEGACY_SIZE) {
+    if (size != sizeof(data) && size != CONTROLLER_SETTINGS_V2_SIZE &&
+        size != CONTROLLER_SETTINGS_LEGACY_SIZE) {
         read_error = -EINVAL;
         return 0;
     }

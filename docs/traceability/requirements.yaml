@@ -295,7 +295,7 @@ requirements:
     file: scenarios/modbus_atomic_write.yaml
     name: modbus_fc16_rejection_preserves_setpoint
 - id: REQ-MOTOR-01
-  requirement: Паспортные параметры двигателя имеют дефолты 400 В, 11500 мА, 5000 x0.01 Гц, 1450 об/мин, 2 пары полюсов и сохраняются в NVS v2.
+  requirement: Паспортные параметры двигателя имеют дефолты 400 В, 11500 мА, 5000 x0.01 Гц, 1450 об/мин, 2 пары полюсов и сохраняются в NVS v3 с совместимым чтением v1/v2.
   origin: project
   acs880_topic: null
   code:
@@ -396,13 +396,22 @@ requirements:
     suite: motor_protections
     name: test_lost_feedback_stops_instead_of_disabling_protection
 - id: REQ-MOTOR-06
-  requirement: Shell motor status показывает паспорт с единицами, motor set использует общий с FC16 API с мьютексом, валидацией всего набора и запретом записи в RUNNING/FAULT.
+  requirement: Shell motor status показывает паспорт и расчётные данные; motor set валидирует кандидат под мьютексом, автоматически сохраняет его в NVS, не меняет RAM при ошибке записи и запрещён в RUNNING/FAULT.
   origin: project
   acs880_topic: null
   code:
   - file: src/shell_cli.c
     symbol: cmd_motor_set
+  - file: src/controller_app.c
+    symbol: controller_app_motor_save
   verification:
   - kind: scenario
     file: scenarios/motor_shell.yaml
     name: motor_shell_configuration_and_validation
+  - kind: scenario
+    file: scenarios/motor_shell.yaml
+    name: motor_short_commands_save_and_recalculate
+  - kind: ztest
+    file: tests/motor_settings/src/main.c
+    suite: motor_settings
+    name: test_write_failure_preserves_ram_history_and_stored_config

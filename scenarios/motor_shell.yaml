@@ -47,8 +47,6 @@ scenarios:
         expect: ["Команда отклонена: -16"]
       - command: stop
         expect: [OK]
-      - command: config save
-        expect: [OK]
       - restart: true
       - status: {state: READY, settings_present: "yes", output_x100: 0}
       - command: motor status
@@ -61,3 +59,48 @@ scenarios:
       - command: motor status
         expect: ["Паспорт двигателя (state=FAULT)", "nominal_voltage_v=230 В"]
       - modbus_read: {address: 10, count: 5, expect: [230, 15000, 6000, 1750, 2]}
+
+  - name: motor_short_commands_save_and_recalculate
+    steps:
+      - status: {state: READY}
+      - command: motor status
+        expect: ["type=induction mode=PI", "pole_pairs_calc=2 sync_speed_rpm=1500 slip_x1000=33 max_freq_hz_x100=6000"]
+      - command: motor set freq 60
+        expect: [OK]
+      - command: motor set speed 1750
+        expect: [OK]
+      - command: motor set current 15000
+        expect: [OK]
+      - command: motor set type pmsm
+        expect: [OK]
+      - command: motor set type synrm
+        expect: [OK]
+      - command: motor status
+        expect: ["type=synrm mode=PI", "pole_pairs_calc=2 sync_speed_rpm=1800 slip_x1000=27 max_freq_hz_x100=7200"]
+      - command: motor set freq 50
+        expect: ["Команда отклонена: -22"]
+      - command: motor set freq 501
+        expect: ["Команда отклонена: -22"]
+      - command: motor set speed 1
+        expect: ["Команда отклонена: -22"]
+      - command: motor set current 0
+        expect: ["Команда отклонена: -22"]
+      - command: motor set type invalid
+        expect: ["Команда отклонена: -22"]
+      - restart: true
+      - status: {state: READY, settings_present: "yes"}
+      - command: motor status
+        expect: ["type=synrm mode=PI", "nominal_current_ma=15000", "nominal_frequency_x100=6000", "nominal_speed_rpm=1750", "pole_pairs_calc=2 sync_speed_rpm=1800 slip_x1000=27 max_freq_hz_x100=7200"]
+      - command: start
+        expect: [OK]
+      - command: motor set current 16000
+        expect: ["Команда отклонена: -16"]
+      - command: motor set type induction
+        expect: ["Команда отклонена: -16"]
+      - command: stop
+        expect: [OK]
+      - command: inject wire-break on
+        expect: [OK]
+      - status: {state: FAULT}
+      - command: motor set freq 60
+        expect: ["Команда отклонена: -16"]
