@@ -364,4 +364,120 @@ ZTEST(motor_protections, test_first_invalid_sample_of_available_feedback_is_faul
     zassert_equal(controller_start(&ctrl, 1), -EACCES);
 }
 
+static void isolate_stall_protection(void)
+{
+    ctrl.motor_protections[MOTOR_CURRENT_WARNING].enabled = false;
+    ctrl.motor_protections[MOTOR_CURRENT_TRIP].enabled = false;
+}
+
+ZTEST(motor_protections, test_stall_trips_after_strict_delay_and_latches)
+{
+    sample.motor.current_ma = 23001;
+    sample.motor.frequency_x100 = 499;
+    controller_update(&ctrl, &sample, 100);
+    zassert_true(ctrl.motor_stall_state.pending);
+    controller_update(&ctrl, &sample, 600);
+    zassert_equal(ctrl.active_faults, 0);
+    controller_update(&ctrl, &sample, 601);
+    zassert_equal(ctrl.active_faults, FAULT_MOTOR_STALL);
+    zassert_equal(ctrl.state, STATE_FAULT);
+    zassert_equal(ctrl.frequency_x100, 0);
+    zassert_equal(ctrl.latched_faults, FAULT_MOTOR_STALL);
+    zassert_equal(controller_reset(&ctrl, 602), -EBUSY);
+    struct controller_event event;
+    zassert_true(controller_event_get(&ctrl, ctrl.event_count - 1, &event));
+    zassert_equal(event.type, EVENT_FAULT);
+    zassert_equal(event.faults, FAULT_MOTOR_STALL);
+    size_t count = ctrl.event_count;
+    controller_update(&ctrl, &sample, 700);
+    zassert_equal(ctrl.event_count, count);
+    sample.motor.current_ma = 0;
+    controller_update(&ctrl, &sample, 800);
+    zassert_equal(ctrl.active_faults, 0);
+    zassert_equal(ctrl.state, STATE_FAULT);
+    zassert_equal(ctrl.latched_faults, FAULT_MOTOR_STALL);
+    zassert_ok(controller_reset(&ctrl, 801));
+    zassert_equal(ctrl.frequency_x100, 0);
+    zassert_ok(controller_start(&ctrl, 802));
+}
+
+ZTEST(motor_protections, test_stall_uses_strict_current_and_frequency_boundaries)
+{
+    isolate_stall_protection();
+    sample.motor.current_ma = 23000;
+    sample.motor.frequency_x100 = 499;
+    controller_update(&ctrl, &sample, 100);
+    controller_update(&ctrl, &sample, 1000);
+    zassert_false(ctrl.motor_stall_state.pending);
+    zassert_equal(ctrl.active_faults, 0);
+    sample.motor.current_ma = 23001;
+    sample.motor.frequency_x100 = 500;
+    controller_update(&ctrl, &sample, 1100);
+    controller_update(&ctrl, &sample, 2000);
+    zassert_false(ctrl.motor_stall_state.pending);
+    zassert_equal(ctrl.active_faults, 0);
+}
+
+ZTEST(motor_protections, test_stall_requires_continuous_combined_condition)
+{
+    isolate_stall_protection();
+    sample.motor.current_ma = 23001;
+    sample.motor.frequency_x100 = 499;
+    controller_update(&ctrl, &sample, 100);
+    sample.motor.frequency_x100 = 500;
+    controller_update(&ctrl, &sample, 400);
+    zassert_false(ctrl.motor_stall_state.pending);
+    sample.motor.frequency_x100 = 499;
+    controller_update(&ctrl, &sample, 500);
+    controller_update(&ctrl, &sample, 1000);
+    zassert_equal(ctrl.active_faults, 0);
+    controller_update(&ctrl, &sample, 1001);
+    zassert_equal(ctrl.active_faults, FAULT_MOTOR_STALL);
+}
+
+ZTEST(motor_protections, test_stall_stop_start_restarts_delay)
+{
+    isolate_stall_protection();
+    sample.motor.current_ma = 23001;
+    sample.motor.frequency_x100 = 499;
+    controller_update(&ctrl, &sample, 100);
+    controller_stop(&ctrl, 200);
+    zassert_false(ctrl.motor_stall_state.pending);
+    controller_update(&ctrl, &sample, 5000);
+    zassert_equal(ctrl.active_faults, 0);
+    zassert_ok(controller_start(&ctrl, 10000));
+    controller_update(&ctrl, &sample, 10100);
+    controller_update(&ctrl, &sample, 10600);
+    zassert_equal(ctrl.active_faults, 0);
+    controller_update(&ctrl, &sample, 10601);
+    zassert_equal(ctrl.active_faults, FAULT_MOTOR_STALL);
+}
+
+ZTEST(motor_protections, test_stall_lost_feedback_keeps_active_fault)
+{
+    isolate_stall_protection();
+    sample.motor.current_ma = 23001;
+    sample.motor.frequency_x100 = 499;
+    controller_update(&ctrl, &sample, 100);
+    controller_update(&ctrl, &sample, 601);
+    sample.motor.valid = false;
+    controller_update(&ctrl, &sample, 700);
+    zassert_true(ctrl.active_faults & FAULT_MOTOR_STALL);
+    zassert_true(ctrl.active_faults & FAULT_MOTOR_FEEDBACK);
+    zassert_equal(controller_reset(&ctrl, 701), -EBUSY);
+}
+
+ZTEST(motor_protections, test_stall_clock_rollback_restarts_delay)
+{
+    isolate_stall_protection();
+    sample.motor.current_ma = 23001;
+    sample.motor.frequency_x100 = 499;
+    controller_update(&ctrl, &sample, 1000);
+    controller_update(&ctrl, &sample, 900);
+    controller_update(&ctrl, &sample, 1400);
+    zassert_equal(ctrl.active_faults, 0);
+    controller_update(&ctrl, &sample, 1401);
+    zassert_equal(ctrl.active_faults, FAULT_MOTOR_STALL);
+}
+
 ZTEST_SUITE(motor_protections, NULL, NULL, before, NULL, NULL);

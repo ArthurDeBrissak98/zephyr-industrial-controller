@@ -1,0 +1,31 @@
+version: 1
+scenarios:
+  - name: motor_stall_stops_latches_and_requires_manual_reset
+    steps:
+      - status: {state: READY, motor_stall_current_ma: 23000, motor_stall_frequency_x100: 500, motor_stall_time_ms: 500}
+      - command: start
+        expect: [OK]
+      - command: inject motor-frequency 400
+        expect: [OK]
+      - command: inject motor-current 23001
+        expect: [OK]
+      - status: {state: FAULT, active: 512, process_faults: 512, latched: 512, output_x100: 0, active_names: MOTOR_STALL}
+        timeout_ms: 900
+      - command: reset
+        expect: ["Команда отклонена: -16"]
+      - command: inject motor-current 0
+        expect: [OK]
+      - status: {state: FAULT, active: 0, latched: 512, output_x100: 0}
+      - modbus_read: {address: 0, count: 3, expect: [3, 0, 0]}
+      - command: events
+        expect: ["event=FAULT", "fault_names=MOTOR_STALL"]
+      - command: reset
+        expect: [OK]
+      - status: {state: READY, active: 0, latched: 0, output_x100: 0}
+      - command: inject motor-current off
+        expect: [OK]
+      - command: inject motor-frequency off
+        expect: [OK]
+      - command: start
+        expect: [OK]
+      - status: {state: RUNNING, active: 0}

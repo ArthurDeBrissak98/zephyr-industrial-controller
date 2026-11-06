@@ -59,6 +59,7 @@ static const struct named_flag fault_names[] = {
     {FAULT_INPUT_IO, "INPUT_IO"},
     {FAULT_MOTOR_FEEDBACK, "MOTOR_FEEDBACK"},
     {FAULT_CONFIG_ERROR, "CONFIG_ERROR"},
+    {FAULT_MOTOR_STALL, "MOTOR_STALL"},
     {FAULT_MOTOR_OVERCURRENT, "MOTOR_OVERCURRENT"},
     {FAULT_MOTOR_OVERFREQUENCY, "MOTOR_OVERFREQUENCY"},
     {FAULT_PROCESS_LOW, "PROCESS_LOW"},
@@ -140,6 +141,9 @@ static int cmd_status(const struct shell *sh, size_t argc, char **argv)
                 status.config.motor.nominal_voltage_v, status.config.motor.nominal_current_ma,
                 status.config.motor.nominal_frequency_x100, status.config.motor.nominal_speed_rpm,
                 status.config.motor.pole_pairs);
+    shell_print(sh, "motor_stall_current_ma=%d motor_stall_frequency_x100=%d motor_stall_time_ms=%d motor_stall_pending=%s",
+                status.config.motor.nominal_current_ma * 2, MOTOR_STALL_FREQUENCY_X100,
+                MOTOR_STALL_TIME_MS, status.motor_stall_pending ? "yes" : "no");
     format_flags(names, sizeof(names), status.active_faults, fault_names, ARRAY_SIZE(fault_names));
     shell_print(sh, "active_names=%s", names);
     format_flags(names, sizeof(names), status.active_warnings, warning_names, ARRAY_SIZE(warning_names));

@@ -11,6 +11,7 @@ struct controller_status {
     struct protection_config protections[PROTECTION_COUNT];
     struct protection_limit motor_protections[MOTOR_PROTECTION_COUNT];
     bool motor_feedback_valid;
+    bool motor_stall_pending;
     bool motor_current_injected;
     bool motor_frequency_injected;
     uint32_t active_warnings;

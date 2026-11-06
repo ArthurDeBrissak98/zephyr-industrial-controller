@@ -86,6 +86,11 @@ jobs:
           python -m scripts.run_scenarios --file scenarios/motor_protections.yaml \
             --elf build/zephyr/zephyr.elf --log build/motor-protections.log
 
+      - name: Проверить stall-защиту и ручной сброс
+        run: |
+          python -m scripts.run_scenarios --file tests/conformance/scenarios/motor_stall.yaml \
+            --elf build/zephyr/zephyr.elf --log build/motor-stall.log
+
       - name: Проверить Shell-настройку двигателя
         run: |
           python -m scripts.run_scenarios --file scenarios/motor_shell.yaml \
@@ -136,6 +141,7 @@ jobs:
             build/modbus-motor.log
             build/modbus-motor-data.log
             build/motor-protections.log
+            build/motor-stall.log
             build/motor-shell.log
             build/motor-config-valid.log
             build/motor-config-invalid.log

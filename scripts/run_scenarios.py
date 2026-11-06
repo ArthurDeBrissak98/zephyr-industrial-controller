@@ -12,6 +12,7 @@ from .demo_test import Console
 from .modbus_client import Client
 
 STATUS_FIELDS = {
+    "motor_stall_current_ma", "motor_stall_frequency_x100", "motor_stall_time_ms", "motor_stall_pending",
     "motor_actual_current_ma", "motor_actual_frequency_x100", "motor_feedback_valid", "motor_feedback_available",
     "motor_current_injected", "motor_frequency_injected", "motor_current_warning_ma",
     "motor_current_trip_ma", "motor_frequency_warning_x100", "motor_frequency_trip_x100",

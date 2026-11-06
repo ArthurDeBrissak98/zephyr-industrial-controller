@@ -190,6 +190,7 @@ void controller_app_status(struct controller_status *status)
     k_mutex_lock(&controller.mutex, K_FOREVER);
     *status = (struct controller_status) {
         .motor_feedback_valid = controller.motor_feedback_valid,
+        .motor_stall_pending = controller.motor_stall_state.pending,
         .motor_current_injected = motor_injected[MOTOR_FEEDBACK_CURRENT],
         .motor_frequency_injected = motor_injected[MOTOR_FEEDBACK_FREQUENCY],
         .state = controller.state,

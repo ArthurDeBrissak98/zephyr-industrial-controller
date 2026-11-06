@@ -451,3 +451,23 @@ requirements:
   - kind: scenario
     file: scenarios/modbus_motor_data.yaml
     name: modbus_motor_data_atomic_persistent_write
+
+- id: REQ-MOTOR-08
+  requirement: При фактическом токе строго выше 200% номинала и частоте ниже 5 Гц непрерывно дольше 500 мс в RUNNING stall-защита останавливает выход, записывает причину и защёлкивает аварию до устранения и ручного сброса.
+  origin: project
+  acs880_topic: null
+  code:
+  - file: src/controller.c
+    symbol: update_stall_protection
+  verification:
+  - kind: ztest
+    file: tests/motor/src/main.c
+    suite: motor_protections
+    name: test_stall_trips_after_strict_delay_and_latches
+  - kind: ztest
+    file: tests/motor/src/main.c
+    suite: motor_protections
+    name: test_stall_requires_continuous_combined_condition
+  - kind: scenario
+    file: tests/conformance/scenarios/motor_stall.yaml
+    name: motor_stall_stops_latches_and_requires_manual_reset

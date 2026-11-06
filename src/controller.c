@@ -71,12 +71,46 @@ static void motor_protection_defaults(struct controller *ctrl)
         };
     }
     memset(ctrl->motor_protection_states, 0, sizeof(ctrl->motor_protection_states));
+    memset(&ctrl->motor_stall_state, 0, sizeof(ctrl->motor_stall_state));
 }
 
 static void protection_defaults(struct controller *ctrl)
 {
     process_protection_defaults(ctrl);
     motor_protection_defaults(ctrl);
+}
+
+// REQ-MOTOR-08
+static void update_stall_protection(struct controller *ctrl, int64_t now_ms)
+{
+    struct protection_state *state = &ctrl->motor_stall_state;
+    if (!ctrl->motor_feedback_valid) {
+        // Потеря измерений прерывает выдержку, но не снимает активную причину.
+        state->pending = false;
+    } else {
+        bool stalled = ctrl->config.motor.nominal_current_ma > 0 &&
+            (int64_t)ctrl->sample.motor.current_ma > (int64_t)ctrl->config.motor.nominal_current_ma * 2 &&
+            ctrl->sample.motor.frequency_x100 < MOTOR_STALL_FREQUENCY_X100;
+        if (!stalled) {
+            state->active = false;
+            state->pending = false;
+        } else if (!state->active) {
+            if (ctrl->state != STATE_RUNNING) {
+                state->pending = false;
+            } else {
+                if (!state->pending || now_ms < state->pending_since_ms) {
+                    state->pending = true;
+                    state->pending_since_ms = now_ms;
+                }
+                // Без знакового переполнения при большой разнице временных меток.
+                if ((uint64_t)now_ms - (uint64_t)state->pending_since_ms > MOTOR_STALL_TIME_MS) {
+                    state->active = true;
+                    state->pending = false;
+                }
+            }
+        }
+    }
+    if (state->active) ctrl->process_faults |= FAULT_MOTOR_STALL;
 }
 
 // REQ-MOTOR-04
@@ -108,6 +142,7 @@ static void update_motor_protections(struct controller *ctrl, int64_t now_ms)
         case MOTOR_FREQUENCY_TRIP: ctrl->process_faults |= FAULT_MOTOR_OVERFREQUENCY; break;
         }
     }
+    update_stall_protection(ctrl, now_ms);
 }
 
 // REQ-PROT-02
@@ -403,6 +438,7 @@ static int controller_start_locked(struct controller *ctrl, int64_t now_ms)
         return -EACCES;
     }
     ctrl->state = STATE_RUNNING;
+    ctrl->motor_stall_state.pending = false;
     ctrl->integral = 0;
     ctrl->last_update_ms = now_ms;
     record_event(ctrl, EVENT_START, FAULT_NONE, ctrl->active_warnings, now_ms);
@@ -411,6 +447,7 @@ static int controller_start_locked(struct controller *ctrl, int64_t now_ms)
 
 static void controller_stop_locked(struct controller *ctrl, int64_t now_ms)
 {
+    ctrl->motor_stall_state.pending = false;
     ctrl->frequency_x100 = 0;
     ctrl->integral = 0;
     // Команда останова не снимает зафиксированную аварию.

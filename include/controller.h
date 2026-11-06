@@ -104,6 +104,7 @@ struct controller {
     struct protection_state protection_states[PROTECTION_COUNT];
     struct protection_limit motor_protections[MOTOR_PROTECTION_COUNT];
     struct protection_state motor_protection_states[MOTOR_PROTECTION_COUNT];
+    struct protection_state motor_stall_state;
     bool motor_feedback_seen;
     bool motor_feedback_valid;
     uint32_t active_warnings;
