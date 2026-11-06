@@ -50,6 +50,8 @@ def test_corruption(elf, qemu, log):
             status = console.status("READY")
             require(status_matches(status, {"profile": "pump", "mode": "4-20ma",
                 "settings_present": "no", "output_x100": 0}), status)
+            journal = console.command("events")
+            require("event=FAULT" in journal and "fault_names=CONFIG_ERROR" in journal, journal)
         finally:
             log.extend(console.transcript)
             console.close()

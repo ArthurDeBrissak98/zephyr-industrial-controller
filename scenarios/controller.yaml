@@ -140,5 +140,7 @@ scenarios:
         expect: [OK]
       - corrupt_settings_crc: true
       - status: {state: READY, profile: pump, mode: 4-20ma, settings_ready: "yes", settings_present: "no", settings_error: -77, output_x100: 0, pid_kp: 50}
+      - command: events
+        expect: ["event=FAULT", "fault_names=CONFIG_ERROR"]
       - command: protect show
         expect: ["low-warning enabled=yes threshold_x10=100 hysteresis_x10=20 delay_ms=500"]

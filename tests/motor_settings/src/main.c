@@ -9,11 +9,13 @@
 static struct controller_parameters stored;
 static bool present;
 static int write_error;
+static int read_error;
 static unsigned int writes;
 
 int controller_settings_init(void) { return 0; }
 int controller_settings_read(struct controller_parameters *parameters)
 {
+    if (read_error) return read_error;
     if (!present) return -ENOENT;
     *parameters = stored;
     return 0;
@@ -33,10 +35,89 @@ static void before(void *fixture)
     ARG_UNUSED(fixture);
     present = false;
     write_error = 0;
+    read_error = 0;
     writes = 0;
     controller_app_init();
     zassert_equal(controller_app_settings_init(), -ENOENT);
     controller_app_tick();
+}
+
+static void seed_stored_parameters(void)
+{
+    struct controller_status status;
+    controller_app_status(&status);
+    stored.config = status.config;
+    memcpy(stored.protections, status.protections, sizeof(stored.protections));
+    present = true;
+}
+
+static unsigned int config_fault_events(void)
+{
+    struct controller_event events[EVENT_CAPACITY];
+    size_t count = controller_app_events(events, ARRAY_SIZE(events));
+    unsigned int faults = 0;
+    for (size_t i = 0; i < count; i++) {
+        if (events[i].type == EVENT_FAULT && events[i].faults == FAULT_CONFIG_ERROR) faults++;
+    }
+    return faults;
+}
+
+ZTEST(motor_settings, test_boot_load_restores_every_motor_parameter_and_recalculates)
+{
+    seed_stored_parameters();
+    stored.config.motor = (struct motor_parameters) {230, 640000, 6000, 1750, 2, MOTOR_PMSM};
+    controller_app_init();
+    zassert_ok(controller_app_settings_init());
+    struct controller_status status;
+    controller_app_status(&status);
+    zassert_mem_equal(&status.config.motor, &stored.config.motor, sizeof(stored.config.motor));
+    zassert_equal(status.motor.pole_pairs_calc, 2);
+    zassert_equal(status.motor.sync_speed_rpm, 1800);
+    zassert_equal(status.motor.slip_x1000, 27);
+    zassert_equal(status.motor.max_freq_hz_x100, 7200);
+    zassert_equal(status.frequency_x100, 0);
+    zassert_equal(status.state, STATE_STOPPED);
+    zassert_equal(config_fault_events(), 0);
+    zassert_equal(writes, 0);
+}
+
+ZTEST(motor_settings, test_boot_invalid_slip_keeps_defaults_and_records_fault)
+{
+    seed_stored_parameters();
+    stored.config.motor = (struct motor_parameters) {230, 15000, 5000, 2100, 1, MOTOR_SYNRM};
+    controller_app_init();
+    zassert_equal(controller_app_settings_init(), -EINVAL);
+    struct controller_status status;
+    controller_app_status(&status);
+    struct motor_parameters defaults = controller_motor_defaults();
+    zassert_mem_equal(&status.config.motor, &defaults, sizeof(defaults));
+    zassert_equal(status.motor.pole_pairs_calc, 2);
+    zassert_equal(status.motor.sync_speed_rpm, 1500);
+    zassert_equal(status.motor.slip_x1000, 33);
+    zassert_equal(status.motor.max_freq_hz_x100, 6000);
+    zassert_false(status.settings_present);
+    zassert_equal(status.settings_error, -EINVAL);
+    zassert_equal(config_fault_events(), 1);
+    zassert_equal(writes, 0);
+    controller_app_tick();
+    controller_app_status(&status);
+    zassert_equal(status.state, STATE_READY);
+    zassert_equal(status.frequency_x100, 0);
+}
+
+ZTEST(motor_settings, test_boot_read_error_is_recorded_but_empty_storage_is_not_fault)
+{
+    zassert_equal(config_fault_events(), 0);
+    read_error = -EBADMSG;
+    controller_app_init();
+    zassert_equal(controller_app_settings_init(), -EBADMSG);
+    zassert_equal(config_fault_events(), 1);
+    struct controller_status status;
+    controller_app_status(&status);
+    zassert_equal(status.config.motor.nominal_frequency_x100, 5000);
+    zassert_equal(status.motor.slip_x1000, 33);
+    zassert_false(status.settings_present);
+    zassert_equal(writes, 0);
 }
 
 ZTEST(motor_settings, test_save_recalculates_and_restores_motor)

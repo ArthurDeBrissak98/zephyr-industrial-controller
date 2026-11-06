@@ -146,6 +146,7 @@ int controller_parameters_apply(struct controller *ctrl,
 bool controller_event_get(struct controller *ctrl, size_t index,
                           struct controller_event *event);
 void controller_events_clear(struct controller *ctrl);
+void controller_record_config_fault(struct controller *ctrl, int64_t now_ms);
 const char *controller_state_name(enum controller_state state);
 const char *controller_event_name(enum event_type type);
 

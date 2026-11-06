@@ -608,6 +608,15 @@ int controller_parameters_apply(struct controller *ctrl,
     return ret;
 }
 
+// REQ-NVS-01
+void controller_record_config_fault(struct controller *ctrl, int64_t now_ms)
+{
+    k_mutex_lock(&ctrl->mutex, K_FOREVER);
+    // Невалидная запись уже отклонена. В RAM остаются исправные дефолты, событие хранит причину.
+    record_event(ctrl, EVENT_FAULT, FAULT_CONFIG_ERROR, 0, now_ms);
+    k_mutex_unlock(&ctrl->mutex);
+}
+
 // REQ-LOG-02
 void controller_events_clear(struct controller *ctrl)
 {

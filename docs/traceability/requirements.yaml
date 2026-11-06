@@ -210,6 +210,8 @@ requirements:
   code:
   - file: src/settings_codec.c
     symbol: controller_settings_decode
+  - file: src/controller.c
+    symbol: controller_record_config_fault
   verification:
   - kind: ztest
     file: tests/settings/src/main.c
@@ -219,6 +221,14 @@ requirements:
     file: tests/settings/src/main.c
     suite: settings_tests
     name: test_unknown_version_and_wrong_length
+  - kind: ztest
+    file: tests/motor_settings/src/main.c
+    suite: motor_settings
+    name: test_boot_invalid_slip_keeps_defaults_and_records_fault
+  - kind: ztest
+    file: tests/motor_settings/src/main.c
+    suite: motor_settings
+    name: test_boot_load_restores_every_motor_parameter_and_recalculates
   - kind: scenario
     file: scenarios/controller.yaml
     name: nvs_corrupted_crc_restores_defaults

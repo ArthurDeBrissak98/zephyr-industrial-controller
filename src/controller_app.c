@@ -283,6 +283,11 @@ int controller_app_settings_init(void)
     settings_ready = ret == 0;
     if (!ret) ret = load_settings_locked();
     settings_error = ret == -ENOENT ? 0 : ret;
+    if (ret && ret != -ENOENT) {
+        settings_present = false;
+        // controller_init уже установил дефолты; apply проверяет расчёты до изменения RAM.
+        controller_record_config_fault(&controller, k_uptime_get());
+    }
 #endif
     k_mutex_unlock(&controller.mutex);
     k_mutex_unlock(&controller_lock);
